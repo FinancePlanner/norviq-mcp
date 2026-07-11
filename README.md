@@ -59,4 +59,3 @@ claude mcp add --transport http norviq http://localhost:8087/mcp \
 ```sh
 make test
 ```
-# norviq-mcp
