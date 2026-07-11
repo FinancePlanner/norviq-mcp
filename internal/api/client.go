@@ -98,11 +98,11 @@ type Expense struct {
 }
 
 type CreateExpenseRequest struct {
-	Title      string   `json:"title"`
-	Amount     float64  `json:"amount"`
-	Pillar     string   `json:"pillar"`
-	OccurredOn string   `json:"occurredOn"`
-	CategoryID *string  `json:"categoryId,omitempty"`
+	Title      string  `json:"title"`
+	Amount     float64 `json:"amount"`
+	Pillar     string  `json:"pillar"`
+	OccurredOn string  `json:"occurredOn"`
+	CategoryID *string `json:"categoryId,omitempty"`
 }
 
 func (c *Client) ListExpenses(ctx context.Context, from, to string, limit int) ([]Expense, error) {

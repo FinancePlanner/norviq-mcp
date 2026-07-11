@@ -34,6 +34,8 @@ func fail(err error) *mcp.CallToolResult {
 func Register(s *mcp.Server, client *api.Client, p *auth.Principal) {
 	registerExpenses(s, client, p)
 	registerReports(s, client, p)
+	registerCSV(s, client, p)
+	registerMarket(s, client, p)
 }
 
 func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
