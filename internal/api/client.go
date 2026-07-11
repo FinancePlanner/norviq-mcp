@@ -72,7 +72,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	if err != nil {
 		return fmt.Errorf("call backend: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	payload, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -98,11 +98,11 @@ type Expense struct {
 }
 
 type CreateExpenseRequest struct {
-	Title      string   `json:"title"`
-	Amount     float64  `json:"amount"`
-	Pillar     string   `json:"pillar"`
-	OccurredOn string   `json:"occurredOn"`
-	CategoryID *string  `json:"categoryId,omitempty"`
+	Title      string  `json:"title"`
+	Amount     float64 `json:"amount"`
+	Pillar     string  `json:"pillar"`
+	OccurredOn string  `json:"occurredOn"`
+	CategoryID *string `json:"categoryId,omitempty"`
 }
 
 func (c *Client) ListExpenses(ctx context.Context, from, to string, limit int) ([]Expense, error) {
@@ -207,7 +207,7 @@ func (c *Client) doWithIdempotency(ctx context.Context, method, path string, bod
 	if err != nil {
 		return fmt.Errorf("call backend: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	payload, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return &APIError{Status: resp.StatusCode, Body: string(payload)}

@@ -31,7 +31,7 @@ func registerReports(s *mcp.Server, client *api.Client, p *auth.Principal) {
 		if err != nil {
 			return fail(err), nil
 		}
-		var pretty json.RawMessage = raw
+		pretty := raw
 		out, _ := json.MarshalIndent(&pretty, "", "  ")
 		return textResult(string(out), false), nil
 	})

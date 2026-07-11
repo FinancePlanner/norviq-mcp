@@ -80,7 +80,7 @@ func (in *Introspector) Introspect(ctx context.Context, token string) (Introspec
 	if err != nil {
 		return Introspection{}, fmt.Errorf("introspection call failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		payload, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return Introspection{}, fmt.Errorf("introspection returned %d: %s", resp.StatusCode, payload)
