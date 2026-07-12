@@ -1,0 +1,83 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }} # FinancePlanner/norviq-mcp
+
+jobs:
+  build:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      sha_tag: ${{ steps.refs.outputs.sha_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image refs
+        id: refs
+        run: |
+          echo "repo=${REGISTRY}/${IMAGE_NAME,,}" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "IMAGE_REPO=${REGISTRY}/${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_REPO }}:${{ github.sha }}
+            ${{ env.IMAGE_REPO }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          platforms: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  bump-staging:
+    name: Bump staging image tag in norviq-infra
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout norviq-infra
+        uses: actions/checkout@v4
+        with:
+          repository: FinancePlanner/norviq-infra
+          # A PAT (or GitHub App token) with contents:write on norviq-infra.
+          # Add it as an Actions secret named INFRA_DEPLOY_TOKEN in this repo.
+          token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
+          ref: main
+
+      - name: Install yq
+        run: sudo snap install yq || (sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 && sudo chmod +x /usr/local/bin/yq)
+
+      - name: Write staging image tag
+        run: |
+          yq -i ".image.tag = \"${{ needs.build.outputs.sha_tag }}\"" apps/mcp/values-staging.yaml
+
+      - name: Commit and push
+        run: |
+          git config user.name "norviq-mcp-ci"
+          git config user.email "ci@norviq.org"
+          if git diff --quiet; then echo "no tag change"; exit 0; fi
+          git add apps/mcp/values-staging.yaml
+          git commit -m "chore(mcp): bump staging image to ${{ needs.build.outputs.sha_tag }}"
+          git push origin main
