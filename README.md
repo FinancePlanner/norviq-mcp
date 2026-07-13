@@ -26,6 +26,9 @@ AI client ──Bearer (personal access token / OAuth)──▶ norviq-mcp ─�
 | `expenses:read` | `list_expenses`, `list_expense_categories` |
 | `expenses:write` | `add_expense`, `update_expense`, `delete_expense` |
 | `reports:read` | `get_spending_report` |
+| `market:read` | `get_quote`, `search_symbols` |
+| `insights:read` | `get_insights` |
+| `tax:read` | `get_tax_dashboard`, `get_tax_loss_carryforwards` |
 
 Tools are registered per session only when the token holds their scope, so a
 client never sees a tool it cannot use.

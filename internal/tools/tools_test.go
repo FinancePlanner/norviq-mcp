@@ -36,6 +36,10 @@ func fakeBackend(t *testing.T) (*httptest.Server, *[]string) {
 			_, _ = w.Write([]byte(`{"id":"e2","title":"Lunch","amount":12,"pillar":"lifestyle","occurredOn":"2026-07-03"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/reports/overview":
 			_, _ = w.Write([]byte(`{"total":100}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/tax/dashboard":
+			_, _ = w.Write([]byte(`{"taxYear":2026,"jurisdiction":"US","disclaimer":"Educational estimate only."}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/tax/loss-carryforwards":
+			_, _ = w.Write([]byte(`{"asOfTaxYear":2026,"balances":[]}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -143,5 +147,36 @@ func TestReportTool(t *testing.T) {
 	}
 	if res.IsError {
 		t.Fatalf("report tool errored: %+v", res.Content)
+	}
+}
+
+func TestTaxReadScopeExposesAndCallsTaxTools(t *testing.T) {
+	backend, seen := fakeBackend(t)
+	cs := connect(t, map[string]bool{"tax:read": true}, backend.URL)
+
+	listed, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, tool := range listed.Tools {
+		names[tool.Name] = true
+	}
+	if !names["get_tax_dashboard"] || !names["get_tax_loss_carryforwards"] {
+		t.Fatalf("tax:read did not expose both tax tools: %v", names)
+	}
+
+	args, _ := json.Marshal(map[string]any{"jurisdiction": "US", "tax_year": 2026})
+	result, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "get_tax_dashboard", Arguments: json.RawMessage(args),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsError {
+		t.Fatalf("get_tax_dashboard returned error: %+v", result.Content)
+	}
+	if len(*seen) == 0 || (*seen)[len(*seen)-1] != "GET /v1/tax/dashboard" {
+		t.Fatalf("backend did not receive tax dashboard request; saw %v", *seen)
 	}
 }

@@ -42,7 +42,7 @@ func New(cfg Config) http.Handler {
 			"resource":              cfg.PublicURL,
 			"authorization_servers": []string{cfg.BackendURL},
 			"scopes_supported": []string{
-				"expenses:read", "expenses:write", "reports:read", "market:read", "insights:read",
+				"expenses:read", "expenses:write", "reports:read", "market:read", "insights:read", "tax:read",
 			},
 		})
 	})
