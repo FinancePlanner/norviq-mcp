@@ -16,6 +16,15 @@ var writeToolNames = []string{
 	"add_goal",
 	"update_goal",
 	"delete_goal",
+	"create_budget_snapshot",
+	"update_budget_snapshot",
+	"delete_budget_snapshot",
+	"add_budget_item",
+	"update_budget_item",
+	"delete_budget_item",
+	"add_recurring_expense",
+	"update_recurring_expense",
+	"delete_recurring_expense",
 }
 
 // WriteToolNames returns a defensive copy of tools that must never be exposed

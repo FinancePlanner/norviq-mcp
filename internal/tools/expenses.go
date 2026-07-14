@@ -38,6 +38,8 @@ func Register(s *mcp.Server, client *api.Client, p *auth.Principal) {
 	registerMarket(s, client, p)
 	registerTax(s, client, p)
 	registerPlanning(s, client, p)
+	registerBudget(s, client, p)
+	registerRecurring(s, client, p)
 }
 
 func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
