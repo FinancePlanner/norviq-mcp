@@ -56,7 +56,14 @@ func New(cfg Config) http.Handler {
 			// server so no tools are exposed.
 			return mcp.NewServer(&mcp.Implementation{Name: "norviq", Version: "0.1.0"}, nil)
 		}
-		s := mcp.NewServer(&mcp.Implementation{Name: "norviq", Version: "0.1.0"}, nil)
+		var s *mcp.Server
+		s = mcp.NewServer(&mcp.Implementation{Name: "norviq", Version: "0.2.0"}, &mcp.ServerOptions{
+			InitializedHandler: func(_ context.Context, request *mcp.InitializedRequest) {
+				if !tools.SupportsFormElicitation(request.Session) {
+					s.RemoveTools(tools.WriteToolNames()...)
+				}
+			},
+		})
 		client := api.NewClient(cfg.BackendURL, p.Token)
 		tools.Register(s, client, p)
 		return s

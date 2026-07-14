@@ -18,10 +18,19 @@ func registerCSV(s *mcp.Server, client *api.Client, p *auth.Principal) {
 		mcp.AddTool(s, &mcp.Tool{
 			Name:        "import_expenses_csv",
 			Description: "Import expenses from CSV. ALWAYS run once with dry_run=true first, show the user the per-row results, then re-call with dry_run=false only after they confirm.",
-		}, func(ctx context.Context, _ *mcp.ServerSession, req *mcp.CallToolParamsFor[importArgs]) (*mcp.CallToolResult, error) {
+		}, func(ctx context.Context, session *mcp.ServerSession, req *mcp.CallToolParamsFor[importArgs]) (*mcp.CallToolResult, error) {
 			dryRun := true
 			if req.Arguments.DryRun != nil {
 				dryRun = *req.Arguments.DryRun
+			}
+			if !dryRun {
+				confirmed, err := confirmMutation(ctx, session, "Import the validated CSV rows into your expense history?")
+				if err != nil {
+					return fail(err), nil
+				}
+				if !confirmed {
+					return textResult("CSV import was not confirmed.", false), nil
+				}
 			}
 			raw, err := client.ImportExpensesCSV(ctx, req.Arguments.CSVContent, dryRun)
 			if err != nil {

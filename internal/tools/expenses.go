@@ -37,6 +37,7 @@ func Register(s *mcp.Server, client *api.Client, p *auth.Principal) {
 	registerCSV(s, client, p)
 	registerMarket(s, client, p)
 	registerTax(s, client, p)
+	registerPlanning(s, client, p)
 }
 
 func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
@@ -85,8 +86,20 @@ func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			Name:        "add_expense",
 			Description: "Add a new expense to the user's account.",
 			Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
-		}, func(ctx context.Context, _ *mcp.ServerSession, req *mcp.CallToolParamsFor[addArgs]) (*mcp.CallToolResult, error) {
+		}, func(ctx context.Context, session *mcp.ServerSession, req *mcp.CallToolParamsFor[addArgs]) (*mcp.CallToolResult, error) {
 			a := req.Arguments
+			confirmed, err := confirmMutation(ctx, session, fmt.Sprintf(
+				"Add expense %q for %.2f on %s?",
+				a.Title,
+				a.Amount,
+				a.OccurredOn,
+			))
+			if err != nil {
+				return fail(err), nil
+			}
+			if !confirmed {
+				return textResult("Expense creation was not confirmed.", false), nil
+			}
 			body := api.CreateExpenseRequest{Title: a.Title, Amount: a.Amount, Pillar: a.Pillar, OccurredOn: a.OccurredOn}
 			if a.CategoryID != "" {
 				body.CategoryID = &a.CategoryID
@@ -109,7 +122,7 @@ func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
 		mcp.AddTool(s, &mcp.Tool{
 			Name:        "update_expense",
 			Description: "Update fields of an existing expense.",
-		}, func(ctx context.Context, _ *mcp.ServerSession, req *mcp.CallToolParamsFor[updateArgs]) (*mcp.CallToolResult, error) {
+		}, func(ctx context.Context, session *mcp.ServerSession, req *mcp.CallToolParamsFor[updateArgs]) (*mcp.CallToolResult, error) {
 			a := req.Arguments
 			patch := map[string]any{}
 			if a.Title != "" {
@@ -124,6 +137,13 @@ func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			if a.OccurredOn != "" {
 				patch["occurredOn"] = a.OccurredOn
 			}
+			confirmed, err := confirmMutation(ctx, session, fmt.Sprintf("Apply the proposed changes to expense %q?", a.ID))
+			if err != nil {
+				return fail(err), nil
+			}
+			if !confirmed {
+				return textResult("Expense update was not confirmed.", false), nil
+			}
 			updated, err := client.UpdateExpense(ctx, a.ID, patch)
 			if err != nil {
 				return fail(err), nil
@@ -133,16 +153,19 @@ func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
 		})
 
 		type deleteArgs struct {
-			ID      string `json:"id" jsonschema:"id of the expense to delete"`
-			Confirm bool   `json:"confirm" jsonschema:"must be true to actually delete"`
+			ID string `json:"id" jsonschema:"id of the expense to delete"`
 		}
 		mcp.AddTool(s, &mcp.Tool{
 			Name:        "delete_expense",
-			Description: "Delete an expense. Requires confirm=true; ask the user to confirm before calling with confirm=true.",
+			Description: "Propose deleting an expense. The client must show an MCP confirmation form before Norviq writes anything.",
 			Annotations: &mcp.ToolAnnotations{DestructiveHint: ptrBool(true)},
-		}, func(ctx context.Context, _ *mcp.ServerSession, req *mcp.CallToolParamsFor[deleteArgs]) (*mcp.CallToolResult, error) {
-			if !req.Arguments.Confirm {
-				return textResult("Deletion not performed: set confirm=true after the user confirms.", false), nil
+		}, func(ctx context.Context, session *mcp.ServerSession, req *mcp.CallToolParamsFor[deleteArgs]) (*mcp.CallToolResult, error) {
+			confirmed, err := confirmMutation(ctx, session, fmt.Sprintf("Permanently delete expense %q?", req.Arguments.ID))
+			if err != nil {
+				return fail(err), nil
+			}
+			if !confirmed {
+				return textResult("Expense deletion was not confirmed.", false), nil
 			}
 			if err := client.DeleteExpense(ctx, req.Arguments.ID); err != nil {
 				return fail(err), nil
@@ -159,5 +182,3 @@ func idempotencyKey(userID string, args any) string {
 	sum := sha256.Sum256([]byte(userID + ":" + string(encoded)))
 	return "mcp_" + hex.EncodeToString(sum[:16])
 }
-
-var _ = fmt.Sprintf
