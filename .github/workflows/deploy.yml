@@ -81,3 +81,61 @@ jobs:
           git add apps/mcp/values-staging.yaml
           git commit -m "chore(mcp): bump staging image to ${{ needs.build.outputs.sha_tag }}"
           git push origin main
+
+  deploy-compose:
+    name: Deploy MCP to production Compose
+    needs: build
+    if: ${{ vars.COMPOSE_DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Validate SSH secrets
+        run: |
+          test -n "${{ secrets.SERVER_HOST }}" || (echo "SERVER_HOST is empty" && exit 1)
+          test -n "${{ secrets.SERVER_USER }}" || (echo "SERVER_USER is empty" && exit 1)
+          test -n "${{ secrets.SERVER_SSH_KEY }}" || (echo "SERVER_SSH_KEY is empty" && exit 1)
+
+      - name: Deploy immutable image
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /opt/stockplan
+
+            MCP_IMAGE="ghcr.io/financeplanner/norviq-mcp:${{ needs.build.outputs.sha_tag }}"
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            docker pull "${MCP_IMAGE}"
+
+            if grep -q '^MCP_IMAGE=' .env.production; then
+              sed -i "s|^MCP_IMAGE=.*|MCP_IMAGE=${MCP_IMAGE}|" .env.production
+            else
+              echo "MCP_IMAGE=${MCP_IMAGE}" >> .env.production
+            fi
+
+            if ! grep -Eq '^MCP_INTROSPECTION_SECRET=.+$' .env.production; then
+              echo "MCP_INTROSPECTION_SECRET is missing from /opt/stockplan/.env.production"
+              exit 1
+            fi
+
+            MCP_IMAGE="${MCP_IMAGE}" docker compose -p prod \
+              -f docker-compose.production.yml \
+              --env-file .env.production \
+              up -d --no-deps mcp
+
+            MCP_DOMAIN="${MCP_DOMAIN:-mcp.norviq.org}"
+            for ATTEMPT in $(seq 1 30); do
+              if curl -fsS "https://${MCP_DOMAIN}/readyz" >/dev/null 2>&1; then
+                exit 0
+              fi
+              sleep 2
+            done
+
+            docker compose -p prod -f docker-compose.production.yml \
+              --env-file .env.production logs --tail=120 mcp
+            exit 1

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"github.com/FinancePlanner/norviq-mcp/internal/api"
 	"github.com/FinancePlanner/norviq-mcp/internal/auth"
@@ -15,9 +16,52 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+var (
+	httpRequestsTotal atomic.Uint64
+	authFailuresTotal atomic.Uint64
+)
+
+type metricsResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *metricsResponseWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *metricsResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
+func instrumentHTTP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		httpRequestsTotal.Add(1)
+		wrapped := &metricsResponseWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(wrapped, r)
+		if wrapped.status == http.StatusUnauthorized || wrapped.status == http.StatusForbidden {
+			authFailuresTotal.Add(1)
+		}
+	})
+}
+
+func metricsHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	fmt.Fprintln(w, "# HELP norviq_mcp_http_requests_total HTTP requests received by the MCP service.")
+	fmt.Fprintln(w, "# TYPE norviq_mcp_http_requests_total counter")
+	fmt.Fprintf(w, "norviq_mcp_http_requests_total %d\n", httpRequestsTotal.Load())
+	fmt.Fprintln(w, "# HELP norviq_mcp_auth_failures_total HTTP requests rejected with 401 or 403.")
+	fmt.Fprintln(w, "# TYPE norviq_mcp_auth_failures_total counter")
+	fmt.Fprintf(w, "norviq_mcp_auth_failures_total %d\n", authFailuresTotal.Load())
+	fmt.Fprintln(w, "# HELP norviq_mcp_ready Whether the MCP process is ready to serve requests.")
+	fmt.Fprintln(w, "# TYPE norviq_mcp_ready gauge")
+	fmt.Fprintln(w, "norviq_mcp_ready 1")
+}
+
 type Config struct {
-	BackendURL   string // e.g. https://api.norviqa.io
-	PublicURL    string // this service's public URL, e.g. https://mcp.norviqa.io
+	BackendURL   string // e.g. https://api.norviq.org
+	PublicURL    string // this service's public URL, e.g. https://mcp.norviq.org
 	Introspector *auth.Introspector
 }
 
@@ -33,6 +77,7 @@ func New(cfg Config) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready"))
 	})
+	mux.HandleFunc("/metrics", metricsHandler)
 
 	// RFC 9728 protected-resource metadata: points clients at the backend as the
 	// authorization server.
@@ -71,7 +116,7 @@ func New(cfg Config) http.Handler {
 
 	mux.Handle("/mcp", authMiddleware(cfg, streamable))
 
-	return mux
+	return instrumentHTTP(mux)
 }
 
 // authMiddleware validates the bearer via backend introspection and stashes the
@@ -98,7 +143,7 @@ func authMiddleware(cfg Config, next http.Handler) http.Handler {
 			return
 		}
 		if !result.Entitled {
-			http.Error(w, "norviq Pro is required to use the MCP connector. Upgrade at norviqa.io.", http.StatusForbidden)
+			http.Error(w, "norviq Pro is required to use the MCP connector. Upgrade at norviq.org.", http.StatusForbidden)
 			return
 		}
 		p := &auth.Principal{
