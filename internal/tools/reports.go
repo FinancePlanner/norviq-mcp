@@ -22,17 +22,17 @@ func registerReports(s *mcp.Server, client *api.Client, p *auth.Principal) {
 		Name:        "get_spending_report",
 		Description: "Get a spending report. kind selects the view: overview, monthly, yearly, or suggestions.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-	}, func(ctx context.Context, _ *mcp.ServerSession, req *mcp.CallToolParamsFor[reportArgs]) (*mcp.CallToolResult, error) {
-		kind := req.Arguments.Kind
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args reportArgs) (*mcp.CallToolResult, any, error) {
+		kind := args.Kind
 		if kind == "" {
 			kind = "overview"
 		}
-		raw, err := client.GetReport(ctx, kind, req.Arguments.From, req.Arguments.To)
+		raw, err := client.GetReport(ctx, kind, args.From, args.To)
 		if err != nil {
-			return fail(err), nil
+			return fail(err), nil, nil
 		}
 		pretty := raw
 		out, _ := json.MarshalIndent(&pretty, "", "  ")
-		return textResult(string(out), false), nil
+		return textResult(string(out), false), nil, nil
 	})
 }

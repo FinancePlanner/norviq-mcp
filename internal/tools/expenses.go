@@ -53,26 +53,26 @@ func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			Name:        "list_expenses",
 			Description: "List the user's expenses, optionally filtered by date range.",
 			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-		}, func(ctx context.Context, _ *mcp.ServerSession, req *mcp.CallToolParamsFor[listArgs]) (*mcp.CallToolResult, error) {
-			items, err := client.ListExpenses(ctx, req.Arguments.From, req.Arguments.To, req.Arguments.Limit)
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args listArgs) (*mcp.CallToolResult, any, error) {
+			items, err := client.ListExpenses(ctx, args.From, args.To, args.Limit)
 			if err != nil {
-				return fail(err), nil
+				return fail(err), nil, nil
 			}
 			out, _ := json.MarshalIndent(items, "", "  ")
-			return textResult(string(out), false), nil
+			return textResult(string(out), false), nil, nil
 		})
 
 		mcp.AddTool(s, &mcp.Tool{
 			Name:        "list_expense_categories",
 			Description: "List the user's expense categories.",
 			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-		}, func(ctx context.Context, _ *mcp.ServerSession, _ *mcp.CallToolParamsFor[struct{}]) (*mcp.CallToolResult, error) {
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 			cats, err := client.ListCategories(ctx)
 			if err != nil {
-				return fail(err), nil
+				return fail(err), nil, nil
 			}
 			out, _ := json.MarshalIndent(cats, "", "  ")
-			return textResult(string(out), false), nil
+			return textResult(string(out), false), nil, nil
 		})
 	}
 
@@ -88,19 +88,19 @@ func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			Name:        "add_expense",
 			Description: "Add a new expense to the user's account.",
 			Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
-		}, func(ctx context.Context, session *mcp.ServerSession, req *mcp.CallToolParamsFor[addArgs]) (*mcp.CallToolResult, error) {
-			a := req.Arguments
-			confirmed, err := confirmMutation(ctx, session, fmt.Sprintf(
+		}, func(ctx context.Context, req *mcp.CallToolRequest, args addArgs) (*mcp.CallToolResult, any, error) {
+			a := args
+			confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf(
 				"Add expense %q for %.2f on %s?",
 				a.Title,
 				a.Amount,
 				a.OccurredOn,
 			))
 			if err != nil {
-				return fail(err), nil
+				return fail(err), nil, nil
 			}
 			if !confirmed {
-				return textResult("Expense creation was not confirmed.", false), nil
+				return textResult("Expense creation was not confirmed.", false), nil, nil
 			}
 			body := api.CreateExpenseRequest{Title: a.Title, Amount: a.Amount, Pillar: a.Pillar, OccurredOn: a.OccurredOn}
 			if a.CategoryID != "" {
@@ -108,10 +108,10 @@ func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			}
 			created, err := client.CreateExpense(ctx, body, idempotencyKey(p.UserID, a))
 			if err != nil {
-				return fail(err), nil
+				return fail(err), nil, nil
 			}
 			out, _ := json.MarshalIndent(created, "", "  ")
-			return textResult("Added expense:\n"+string(out), false), nil
+			return textResult("Added expense:\n"+string(out), false), nil, nil
 		})
 
 		type updateArgs struct {
@@ -124,8 +124,8 @@ func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
 		mcp.AddTool(s, &mcp.Tool{
 			Name:        "update_expense",
 			Description: "Update fields of an existing expense.",
-		}, func(ctx context.Context, session *mcp.ServerSession, req *mcp.CallToolParamsFor[updateArgs]) (*mcp.CallToolResult, error) {
-			a := req.Arguments
+		}, func(ctx context.Context, req *mcp.CallToolRequest, args updateArgs) (*mcp.CallToolResult, any, error) {
+			a := args
 			patch := map[string]any{}
 			if a.Title != "" {
 				patch["title"] = a.Title
@@ -139,19 +139,19 @@ func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			if a.OccurredOn != "" {
 				patch["occurredOn"] = a.OccurredOn
 			}
-			confirmed, err := confirmMutation(ctx, session, fmt.Sprintf("Apply the proposed changes to expense %q?", a.ID))
+			confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Apply the proposed changes to expense %q?", a.ID))
 			if err != nil {
-				return fail(err), nil
+				return fail(err), nil, nil
 			}
 			if !confirmed {
-				return textResult("Expense update was not confirmed.", false), nil
+				return textResult("Expense update was not confirmed.", false), nil, nil
 			}
 			updated, err := client.UpdateExpense(ctx, a.ID, patch)
 			if err != nil {
-				return fail(err), nil
+				return fail(err), nil, nil
 			}
 			out, _ := json.MarshalIndent(updated, "", "  ")
-			return textResult("Updated expense:\n"+string(out), false), nil
+			return textResult("Updated expense:\n"+string(out), false), nil, nil
 		})
 
 		type deleteArgs struct {
@@ -161,18 +161,18 @@ func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			Name:        "delete_expense",
 			Description: "Propose deleting an expense. The client must show an MCP confirmation form before Norviq writes anything.",
 			Annotations: &mcp.ToolAnnotations{DestructiveHint: ptrBool(true)},
-		}, func(ctx context.Context, session *mcp.ServerSession, req *mcp.CallToolParamsFor[deleteArgs]) (*mcp.CallToolResult, error) {
-			confirmed, err := confirmMutation(ctx, session, fmt.Sprintf("Permanently delete expense %q?", req.Arguments.ID))
+		}, func(ctx context.Context, req *mcp.CallToolRequest, args deleteArgs) (*mcp.CallToolResult, any, error) {
+			confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Permanently delete expense %q?", args.ID))
 			if err != nil {
-				return fail(err), nil
+				return fail(err), nil, nil
 			}
 			if !confirmed {
-				return textResult("Expense deletion was not confirmed.", false), nil
+				return textResult("Expense deletion was not confirmed.", false), nil, nil
 			}
-			if err := client.DeleteExpense(ctx, req.Arguments.ID); err != nil {
-				return fail(err), nil
+			if err := client.DeleteExpense(ctx, args.ID); err != nil {
+				return fail(err), nil, nil
 			}
-			return textResult("Deleted expense "+req.Arguments.ID+".", false), nil
+			return textResult("Deleted expense "+args.ID+".", false), nil, nil
 		})
 	}
 }
