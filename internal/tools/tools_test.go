@@ -48,7 +48,10 @@ func fakeBackend(t *testing.T) (*httptest.Server, *[]string) {
 	return srv, &seen
 }
 
-func connect(t *testing.T, scopes map[string]bool, backendURL string) *mcp.ClientSession {
+// connect wires a client session to an in-memory server. A non-nil elicit
+// handler advertises form-elicitation support, mirroring a client that can
+// confirm financial writes.
+func connect(t *testing.T, scopes map[string]bool, backendURL string, elicit func(context.Context, *mcp.ElicitRequest) (*mcp.ElicitResult, error)) *mcp.ClientSession {
 	t.Helper()
 	s := mcp.NewServer(&mcp.Implementation{Name: "norviq", Version: "test"}, nil)
 	client := api.NewClient(backendURL, "nvq_pat_test")
@@ -57,8 +60,12 @@ func connect(t *testing.T, scopes map[string]bool, backendURL string) *mcp.Clien
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
 	go func() { _ = s.Run(context.Background(), serverTransport) }()
 
-	c := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "test"}, nil)
-	cs, err := c.Connect(context.Background(), clientTransport)
+	var opts *mcp.ClientOptions
+	if elicit != nil {
+		opts = &mcp.ClientOptions{ElicitationHandler: elicit}
+	}
+	c := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "test"}, opts)
+	cs, err := c.Connect(context.Background(), clientTransport, nil)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
@@ -68,7 +75,7 @@ func connect(t *testing.T, scopes map[string]bool, backendURL string) *mcp.Clien
 
 func TestReadScopeOnlyExposesReadTools(t *testing.T) {
 	backend, _ := fakeBackend(t)
-	cs := connect(t, map[string]bool{"expenses:read": true}, backend.URL)
+	cs := connect(t, map[string]bool{"expenses:read": true}, backend.URL, nil)
 
 	res, err := cs.ListTools(context.Background(), nil)
 	if err != nil {
@@ -86,9 +93,17 @@ func TestReadScopeOnlyExposesReadTools(t *testing.T) {
 	}
 }
 
+func acceptElicit(_ context.Context, _ *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+	return &mcp.ElicitResult{Action: "accept", Content: map[string]any{"confirm": true}}, nil
+}
+
+func declineElicit(_ context.Context, _ *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+	return &mcp.ElicitResult{Action: "decline"}, nil
+}
+
 func TestAddExpenseSendsIdempotencyKey(t *testing.T) {
 	backend, seen := fakeBackend(t)
-	cs := connect(t, map[string]bool{"expenses:write": true}, backend.URL)
+	cs := connect(t, map[string]bool{"expenses:write": true}, backend.URL, acceptElicit)
 
 	args, _ := json.Marshal(map[string]any{
 		"title": "Lunch", "amount": 12.0, "pillar": "lifestyle", "occurred_on": "2026-07-03",
@@ -115,9 +130,9 @@ func TestAddExpenseSendsIdempotencyKey(t *testing.T) {
 
 func TestDeleteRequiresConfirm(t *testing.T) {
 	backend, seen := fakeBackend(t)
-	cs := connect(t, map[string]bool{"expenses:write": true}, backend.URL)
+	cs := connect(t, map[string]bool{"expenses:write": true}, backend.URL, declineElicit)
 
-	args, _ := json.Marshal(map[string]any{"id": "e1", "confirm": false})
+	args, _ := json.Marshal(map[string]any{"id": "e1"})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
 		Name: "delete_expense", Arguments: json.RawMessage(args),
 	})
@@ -126,17 +141,38 @@ func TestDeleteRequiresConfirm(t *testing.T) {
 	}
 	for _, s := range *seen {
 		if strings.HasPrefix(s, "DELETE") {
-			t.Error("delete_expense hit the backend without confirm=true")
+			t.Error("delete_expense hit the backend without user confirmation")
 		}
 	}
 	if res.IsError {
-		t.Error("delete without confirm should be a soft message, not an error")
+		t.Error("declined delete should be a soft message, not an error")
+	}
+}
+
+func TestWriteToolBlockedWithoutElicitation(t *testing.T) {
+	backend, seen := fakeBackend(t)
+	cs := connect(t, map[string]bool{"expenses:write": true}, backend.URL, nil)
+
+	args, _ := json.Marshal(map[string]any{"id": "e1"})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "delete_expense", Arguments: json.RawMessage(args),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError {
+		t.Error("write tool must error for a client without form elicitation")
+	}
+	for _, s := range *seen {
+		if strings.HasPrefix(s, "DELETE") {
+			t.Error("delete_expense hit the backend despite missing elicitation support")
+		}
 	}
 }
 
 func TestReportTool(t *testing.T) {
 	backend, _ := fakeBackend(t)
-	cs := connect(t, map[string]bool{"reports:read": true}, backend.URL)
+	cs := connect(t, map[string]bool{"reports:read": true}, backend.URL, nil)
 
 	args, _ := json.Marshal(map[string]any{"kind": "overview"})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
@@ -152,7 +188,7 @@ func TestReportTool(t *testing.T) {
 
 func TestTaxReadScopeExposesAndCallsTaxTools(t *testing.T) {
 	backend, seen := fakeBackend(t)
-	cs := connect(t, map[string]bool{"tax:read": true}, backend.URL)
+	cs := connect(t, map[string]bool{"tax:read": true}, backend.URL, nil)
 
 	listed, err := cs.ListTools(context.Background(), nil)
 	if err != nil {

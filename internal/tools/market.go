@@ -20,12 +20,12 @@ func registerMarket(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			Name:        "get_quote",
 			Description: "Get the latest market quote for a stock symbol.",
 			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-		}, func(ctx context.Context, _ *mcp.ServerSession, req *mcp.CallToolParamsFor[quoteArgs]) (*mcp.CallToolResult, error) {
-			raw, err := client.GetQuote(ctx, req.Arguments.Symbol)
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args quoteArgs) (*mcp.CallToolResult, any, error) {
+			raw, err := client.GetQuote(ctx, args.Symbol)
 			if err != nil {
-				return fail(err), nil
+				return fail(err), nil, nil
 			}
-			return textResult(prettyJSON(raw), false), nil
+			return textResult(prettyJSON(raw), false), nil, nil
 		})
 
 		type searchArgs struct {
@@ -35,12 +35,12 @@ func registerMarket(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			Name:        "search_symbols",
 			Description: "Search for stocks, ETFs, and companies by name or ticker.",
 			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-		}, func(ctx context.Context, _ *mcp.ServerSession, req *mcp.CallToolParamsFor[searchArgs]) (*mcp.CallToolResult, error) {
-			raw, err := client.SearchSymbols(ctx, req.Arguments.Query)
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args searchArgs) (*mcp.CallToolResult, any, error) {
+			raw, err := client.SearchSymbols(ctx, args.Query)
 			if err != nil {
-				return fail(err), nil
+				return fail(err), nil, nil
 			}
-			return textResult(prettyJSON(raw), false), nil
+			return textResult(prettyJSON(raw), false), nil, nil
 		})
 	}
 
@@ -49,15 +49,15 @@ func registerMarket(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			Name:        "get_insights",
 			Description: "Get the latest market sentiment insights summary.",
 			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-		}, func(ctx context.Context, _ *mcp.ServerSession, _ *mcp.CallToolParamsFor[struct{}]) (*mcp.CallToolResult, error) {
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 			raw, err := client.GetInsightsSummary(ctx)
 			if err != nil {
-				return fail(err), nil
+				return fail(err), nil, nil
 			}
 			// Insights contain third-party (social) text. Wrap as untrusted so the
 			// model treats any embedded instructions as data, not commands.
 			body := "<untrusted_data source=\"market_insights\">\n" + prettyJSON(raw) + "\n</untrusted_data>"
-			return textResult(body, false), nil
+			return textResult(body, false), nil, nil
 		})
 	}
 }

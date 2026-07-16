@@ -18,29 +18,29 @@ func registerCSV(s *mcp.Server, client *api.Client, p *auth.Principal) {
 		mcp.AddTool(s, &mcp.Tool{
 			Name:        "import_expenses_csv",
 			Description: "Import expenses from CSV. ALWAYS run once with dry_run=true first, show the user the per-row results, then re-call with dry_run=false only after they confirm.",
-		}, func(ctx context.Context, session *mcp.ServerSession, req *mcp.CallToolParamsFor[importArgs]) (*mcp.CallToolResult, error) {
+		}, func(ctx context.Context, req *mcp.CallToolRequest, args importArgs) (*mcp.CallToolResult, any, error) {
 			dryRun := true
-			if req.Arguments.DryRun != nil {
-				dryRun = *req.Arguments.DryRun
+			if args.DryRun != nil {
+				dryRun = *args.DryRun
 			}
 			if !dryRun {
-				confirmed, err := confirmMutation(ctx, session, "Import the validated CSV rows into your expense history?")
+				confirmed, err := confirmMutation(ctx, req.Session, "Import the validated CSV rows into your expense history?")
 				if err != nil {
-					return fail(err), nil
+					return fail(err), nil, nil
 				}
 				if !confirmed {
-					return textResult("CSV import was not confirmed.", false), nil
+					return textResult("CSV import was not confirmed.", false), nil, nil
 				}
 			}
-			raw, err := client.ImportExpensesCSV(ctx, req.Arguments.CSVContent, dryRun)
+			raw, err := client.ImportExpensesCSV(ctx, args.CSVContent, dryRun)
 			if err != nil {
-				return fail(err), nil
+				return fail(err), nil, nil
 			}
 			prefix := "Dry run (nothing written):\n"
 			if !dryRun {
 				prefix = "Import applied:\n"
 			}
-			return textResult(prefix+prettyJSON(raw), false), nil
+			return textResult(prefix+prettyJSON(raw), false), nil, nil
 		})
 	}
 
@@ -53,16 +53,16 @@ func registerCSV(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			Name:        "export_expenses_csv",
 			Description: "Export the user's expenses as CSV text for the given date range.",
 			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-		}, func(ctx context.Context, _ *mcp.ServerSession, req *mcp.CallToolParamsFor[exportArgs]) (*mcp.CallToolResult, error) {
-			csv, err := client.ExportExpensesCSV(ctx, req.Arguments.From, req.Arguments.To)
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args exportArgs) (*mcp.CallToolResult, any, error) {
+			csv, err := client.ExportExpensesCSV(ctx, args.From, args.To)
 			if err != nil {
-				return fail(err), nil
+				return fail(err), nil, nil
 			}
 			const cap = 1 << 20
 			if len(csv) > cap {
-				return textResult("The export is larger than 1 MB. Please narrow the date range or use the web export at norviqa.io.", false), nil
+				return textResult("The export is larger than 1 MB. Please narrow the date range or use the web export at norviqa.io.", false), nil, nil
 			}
-			return textResult(csv, false), nil
+			return textResult(csv, false), nil, nil
 		})
 	}
 }

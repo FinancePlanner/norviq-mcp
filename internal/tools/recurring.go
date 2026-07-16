@@ -27,13 +27,13 @@ func registerRecurring(s *mcp.Server, client *api.Client, principal *auth.Princi
 			Name:        "list_recurring_expenses",
 			Description: "List the user's recurring expense templates.",
 			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-		}, func(ctx context.Context, _ *mcp.ServerSession, _ *mcp.CallToolParamsFor[struct{}]) (*mcp.CallToolResult, error) {
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 			items, err := client.ListRecurringExpenses(ctx)
 			if err != nil {
-				return fail(err), nil
+				return fail(err), nil, nil
 			}
 			out, _ := json.MarshalIndent(items, "", "  ")
-			return textResult(string(out), false), nil
+			return textResult(string(out), false), nil, nil
 		})
 	}
 
@@ -45,23 +45,23 @@ func registerRecurring(s *mcp.Server, client *api.Client, principal *auth.Princi
 		Name:        "add_recurring_expense",
 		Description: "Propose adding a recurring expense template. Requires MCP form confirmation.",
 		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
-	}, func(ctx context.Context, session *mcp.ServerSession, req *mcp.CallToolParamsFor[recurringArgs]) (*mcp.CallToolResult, error) {
-		if strings.TrimSpace(req.Arguments.Title) == "" || req.Arguments.Amount <= 0 {
-			return textResult("A title and positive amount are required.", true), nil
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args recurringArgs) (*mcp.CallToolResult, any, error) {
+		if strings.TrimSpace(args.Title) == "" || args.Amount <= 0 {
+			return textResult("A title and positive amount are required.", true), nil, nil
 		}
-		confirmed, err := confirmMutation(ctx, session, fmt.Sprintf("Add recurring expense %q for %.2f %s?", req.Arguments.Title, req.Arguments.Amount, req.Arguments.Frequency))
+		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Add recurring expense %q for %.2f %s?", args.Title, args.Amount, args.Frequency))
 		if err != nil {
-			return fail(err), nil
+			return fail(err), nil, nil
 		}
 		if !confirmed {
-			return textResult("Recurring expense creation was not confirmed.", false), nil
+			return textResult("Recurring expense creation was not confirmed.", false), nil, nil
 		}
-		created, err := client.CreateRecurringExpense(ctx, recurringRequest(req.Arguments), idempotencyKey(principal.UserID, req.Arguments))
+		created, err := client.CreateRecurringExpense(ctx, recurringRequest(args), idempotencyKey(principal.UserID, args))
 		if err != nil {
-			return fail(err), nil
+			return fail(err), nil, nil
 		}
 		out, _ := json.MarshalIndent(created, "", "  ")
-		return textResult("Created recurring expense:\n"+string(out), false), nil
+		return textResult("Created recurring expense:\n"+string(out), false), nil, nil
 	})
 
 	type updateArgs struct {
@@ -71,20 +71,20 @@ func registerRecurring(s *mcp.Server, client *api.Client, principal *auth.Princi
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "update_recurring_expense",
 		Description: "Propose replacing a recurring expense template. Requires MCP form confirmation.",
-	}, func(ctx context.Context, session *mcp.ServerSession, req *mcp.CallToolParamsFor[updateArgs]) (*mcp.CallToolResult, error) {
-		confirmed, err := confirmMutation(ctx, session, fmt.Sprintf("Replace recurring expense %q with the proposed values?", req.Arguments.ID))
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args updateArgs) (*mcp.CallToolResult, any, error) {
+		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Replace recurring expense %q with the proposed values?", args.ID))
 		if err != nil {
-			return fail(err), nil
+			return fail(err), nil, nil
 		}
 		if !confirmed {
-			return textResult("Recurring expense update was not confirmed.", false), nil
+			return textResult("Recurring expense update was not confirmed.", false), nil, nil
 		}
-		updated, err := client.UpdateRecurringExpense(ctx, req.Arguments.ID, recurringRequest(req.Arguments.recurringArgs))
+		updated, err := client.UpdateRecurringExpense(ctx, args.ID, recurringRequest(args.recurringArgs))
 		if err != nil {
-			return fail(err), nil
+			return fail(err), nil, nil
 		}
 		out, _ := json.MarshalIndent(updated, "", "  ")
-		return textResult("Updated recurring expense:\n"+string(out), false), nil
+		return textResult("Updated recurring expense:\n"+string(out), false), nil, nil
 	})
 
 	type deleteArgs struct {
@@ -94,18 +94,18 @@ func registerRecurring(s *mcp.Server, client *api.Client, principal *auth.Princi
 		Name:        "delete_recurring_expense",
 		Description: "Propose deleting a recurring expense template. Requires MCP form confirmation.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptrBool(true)},
-	}, func(ctx context.Context, session *mcp.ServerSession, req *mcp.CallToolParamsFor[deleteArgs]) (*mcp.CallToolResult, error) {
-		confirmed, err := confirmMutation(ctx, session, fmt.Sprintf("Permanently delete recurring expense %q?", req.Arguments.ID))
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args deleteArgs) (*mcp.CallToolResult, any, error) {
+		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Permanently delete recurring expense %q?", args.ID))
 		if err != nil {
-			return fail(err), nil
+			return fail(err), nil, nil
 		}
 		if !confirmed {
-			return textResult("Recurring expense deletion was not confirmed.", false), nil
+			return textResult("Recurring expense deletion was not confirmed.", false), nil, nil
 		}
-		if err := client.DeleteRecurringExpense(ctx, req.Arguments.ID); err != nil {
-			return fail(err), nil
+		if err := client.DeleteRecurringExpense(ctx, args.ID); err != nil {
+			return fail(err), nil, nil
 		}
-		return textResult("Deleted recurring expense "+req.Arguments.ID+".", false), nil
+		return textResult("Deleted recurring expense "+args.ID+".", false), nil, nil
 	})
 }
 

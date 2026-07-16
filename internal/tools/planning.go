@@ -17,13 +17,13 @@ func registerPlanning(s *mcp.Server, client *api.Client, principal *auth.Princip
 			Name:        "list_goals",
 			Description: "List the user's manual financial goals and their current status.",
 			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-		}, func(ctx context.Context, _ *mcp.ServerSession, _ *mcp.CallToolParamsFor[struct{}]) (*mcp.CallToolResult, error) {
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 			goals, err := client.ListGoals(ctx)
 			if err != nil {
-				return fail(err), nil
+				return fail(err), nil, nil
 			}
 			out, _ := json.MarshalIndent(goals, "", "  ")
-			return textResult(string(out), false), nil
+			return textResult(string(out), false), nil, nil
 		})
 	}
 
@@ -38,24 +38,24 @@ func registerPlanning(s *mcp.Server, client *api.Client, principal *auth.Princip
 		Name:        "add_goal",
 		Description: "Propose adding a financial goal. The client must show an MCP confirmation form before Norviq writes anything.",
 		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
-	}, func(ctx context.Context, session *mcp.ServerSession, req *mcp.CallToolParamsFor[createArgs]) (*mcp.CallToolResult, error) {
-		title := strings.TrimSpace(req.Arguments.Title)
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args createArgs) (*mcp.CallToolResult, any, error) {
+		title := strings.TrimSpace(args.Title)
 		if title == "" {
-			return textResult("Goal title is required.", true), nil
+			return textResult("Goal title is required.", true), nil, nil
 		}
-		confirmed, err := confirmMutation(ctx, session, fmt.Sprintf("Create the financial goal %q?", title))
+		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Create the financial goal %q?", title))
 		if err != nil {
-			return fail(err), nil
+			return fail(err), nil, nil
 		}
 		if !confirmed {
-			return textResult("Goal creation was not confirmed.", false), nil
+			return textResult("Goal creation was not confirmed.", false), nil, nil
 		}
-		created, err := client.CreateGoal(ctx, title, idempotencyKey(principal.UserID, req.Arguments))
+		created, err := client.CreateGoal(ctx, title, idempotencyKey(principal.UserID, args))
 		if err != nil {
-			return fail(err), nil
+			return fail(err), nil, nil
 		}
 		out, _ := json.MarshalIndent(created, "", "  ")
-		return textResult("Created goal:\n"+string(out), false), nil
+		return textResult("Created goal:\n"+string(out), false), nil, nil
 	})
 
 	type updateArgs struct {
@@ -65,24 +65,24 @@ func registerPlanning(s *mcp.Server, client *api.Client, principal *auth.Princip
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "update_goal",
 		Description: "Propose renaming a financial goal. The client must show an MCP confirmation form before Norviq writes anything.",
-	}, func(ctx context.Context, session *mcp.ServerSession, req *mcp.CallToolParamsFor[updateArgs]) (*mcp.CallToolResult, error) {
-		title := strings.TrimSpace(req.Arguments.Title)
-		if strings.TrimSpace(req.Arguments.ID) == "" || title == "" {
-			return textResult("Goal id and title are required.", true), nil
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args updateArgs) (*mcp.CallToolResult, any, error) {
+		title := strings.TrimSpace(args.Title)
+		if strings.TrimSpace(args.ID) == "" || title == "" {
+			return textResult("Goal id and title are required.", true), nil, nil
 		}
-		confirmed, err := confirmMutation(ctx, session, fmt.Sprintf("Rename goal %q to %q?", req.Arguments.ID, title))
+		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Rename goal %q to %q?", args.ID, title))
 		if err != nil {
-			return fail(err), nil
+			return fail(err), nil, nil
 		}
 		if !confirmed {
-			return textResult("Goal update was not confirmed.", false), nil
+			return textResult("Goal update was not confirmed.", false), nil, nil
 		}
-		updated, err := client.UpdateGoal(ctx, req.Arguments.ID, title)
+		updated, err := client.UpdateGoal(ctx, args.ID, title)
 		if err != nil {
-			return fail(err), nil
+			return fail(err), nil, nil
 		}
 		out, _ := json.MarshalIndent(updated, "", "  ")
-		return textResult("Updated goal:\n"+string(out), false), nil
+		return textResult("Updated goal:\n"+string(out), false), nil, nil
 	})
 
 	type deleteArgs struct {
@@ -92,17 +92,17 @@ func registerPlanning(s *mcp.Server, client *api.Client, principal *auth.Princip
 		Name:        "delete_goal",
 		Description: "Propose deleting a financial goal. The client must show an MCP confirmation form before Norviq writes anything.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptrBool(true)},
-	}, func(ctx context.Context, session *mcp.ServerSession, req *mcp.CallToolParamsFor[deleteArgs]) (*mcp.CallToolResult, error) {
-		confirmed, err := confirmMutation(ctx, session, fmt.Sprintf("Permanently delete goal %q?", req.Arguments.ID))
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args deleteArgs) (*mcp.CallToolResult, any, error) {
+		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Permanently delete goal %q?", args.ID))
 		if err != nil {
-			return fail(err), nil
+			return fail(err), nil, nil
 		}
 		if !confirmed {
-			return textResult("Goal deletion was not confirmed.", false), nil
+			return textResult("Goal deletion was not confirmed.", false), nil, nil
 		}
-		if err := client.DeleteGoal(ctx, req.Arguments.ID); err != nil {
-			return fail(err), nil
+		if err := client.DeleteGoal(ctx, args.ID); err != nil {
+			return fail(err), nil, nil
 		}
-		return textResult("Deleted goal "+req.Arguments.ID+".", false), nil
+		return textResult("Deleted goal "+args.ID+".", false), nil, nil
 	})
 }
