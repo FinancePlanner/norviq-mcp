@@ -62,8 +62,8 @@ jobs:
         with:
           repository: FinancePlanner/norviq-infra
           # A PAT (or GitHub App token) with contents:write on norviq-infra.
-          # Add it as an Actions secret named INFRA_DEPLOY_TOKEN in this repo.
-          token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
+          # Add it as an Actions secret named INFRA_TOKEN in this repo.
+          token: ${{ secrets.INFRA_TOKEN }}
           ref: main
 
       - name: Install yq
