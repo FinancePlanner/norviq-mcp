@@ -37,7 +37,7 @@ func fakeBackend(t *testing.T) (*httptest.Server, *[]string) {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/reports/overview":
 			_, _ = w.Write([]byte(`{"total":100}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/tax/dashboard":
-			_, _ = w.Write([]byte(`{"taxYear":2026,"jurisdiction":"US","disclaimer":"Educational estimate only."}`))
+			_, _ = w.Write([]byte(`{"taxYear":2026,"jurisdiction":"US","taxDrag":{"projectedYearEndTax":{"amount":1200,"currency":"USD"}},"locationOpportunities":[{"id":"location:1"}],"opportunities":[{"id":"lot-1","replacementCandidates":[{"symbol":"REPL"}]}],"disclaimer":"Educational estimate only."}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/tax/loss-carryforwards":
 			_, _ = w.Write([]byte(`{"asOfTaxYear":2026,"balances":[]}`))
 		default:
@@ -211,6 +211,12 @@ func TestTaxReadScopeExposesAndCallsTaxTools(t *testing.T) {
 	}
 	if result.IsError {
 		t.Fatalf("get_tax_dashboard returned error: %+v", result.Content)
+	}
+	content, _ := json.Marshal(result.Content)
+	for _, expected := range []string{"taxDrag", "locationOpportunities", "replacementCandidates"} {
+		if !strings.Contains(string(content), expected) {
+			t.Fatalf("enriched tax field %q was not preserved: %s", expected, content)
+		}
 	}
 	if len(*seen) == 0 || (*seen)[len(*seen)-1] != "GET /v1/tax/dashboard" {
 		t.Fatalf("backend did not receive tax dashboard request; saw %v", *seen)

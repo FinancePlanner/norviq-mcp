@@ -20,7 +20,7 @@ func registerTax(s *mcp.Server, client *api.Client, p *auth.Principal) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_tax_dashboard",
-		Description: "Read the user's educational tax estimate dashboard, including support levels, assumptions, warnings, and eligible opportunities. Never present estimates as filing advice.",
+		Description: "Read the user's educational tax dashboard, including tax drag, exact-lot harvesting opportunities, reviewed replacements, asset-location estimates, goal impact, support levels, and warnings. Never present estimates as filing advice or imply that Norviq executes trades.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args taxArgs) (*mcp.CallToolResult, any, error) {
 		raw, err := client.GetTaxDashboard(ctx, args.Jurisdiction, args.TaxYear)
