@@ -4,10 +4,23 @@ Remote [MCP](https://modelcontextprotocol.io) server that lets external AI
 clients (Claude, ChatGPT, Cursor, Gemini, …) operate on a user's norviq account
 over Streamable HTTP.
 
+## Who pays for what
+
+| Piece | Who provides | Who pays |
+|-------|--------------|----------|
+| MCP tools + portfolio/expense/market data | Norviq | Included with Norviq Pro (connector access) |
+| LLM tokens (chat / reasoning) | User's AI client (Claude, Cursor, ChatGPT, …) | **User** — Norviq does not bill model usage for MCP |
+| Norviq personal access token (`nvq_pat_…`) | User mints in Settings → API access | Auth to Norviq tools only — **not** an OpenAI/Anthropic API key |
+
+Bring-your-own-client is intentional: Norviq stays the data/tool layer; users keep LLM costs on their existing AI subscription.
+
+In-app Norviq Assistant (first-party UI) is separate and uses Norviq’s server-side provider key when enabled.
+
 ## How it works
 
 ```
 AI client ──Bearer (personal access token / OAuth)──▶ norviq-mcp ──REST──▶ norviq-backend
+         └── (LLM billed by Claude / Cursor / ChatGPT — not by Norviq)
 ```
 
 - `/mcp` — Streamable HTTP MCP endpoint. Every request must carry a norviq
