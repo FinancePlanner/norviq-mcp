@@ -60,9 +60,20 @@ func metricsHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 type Config struct {
-	BackendURL   string // e.g. https://api.norviq.org
-	PublicURL    string // this service's public URL, e.g. https://mcp.norviq.org
-	Introspector *auth.Introspector
+	BackendURL string // backend the service calls, may be cluster-internal, e.g. http://api:8080
+	// BackendPublicURL is the authorization server URL advertised to OAuth
+	// clients in the RFC 9728 metadata. Must be publicly reachable; falls
+	// back to BackendURL when empty.
+	BackendPublicURL string
+	PublicURL        string // this service's public URL, e.g. https://mcp.norviq.org
+	Introspector     *auth.Introspector
+}
+
+func (c Config) advertisedAuthorizationServer() string {
+	if c.BackendPublicURL != "" {
+		return c.BackendPublicURL
+	}
+	return c.BackendURL
 }
 
 // New returns the top-level http.Handler for the MCP service.
@@ -85,7 +96,7 @@ func New(cfg Config) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"resource":              cfg.PublicURL,
-			"authorization_servers": []string{cfg.BackendURL},
+			"authorization_servers": []string{cfg.advertisedAuthorizationServer()},
 			"scopes_supported": []string{
 				"expenses:read", "expenses:write", "reports:read", "market:read", "insights:read", "tax:read",
 			},
