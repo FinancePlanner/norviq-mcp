@@ -13,6 +13,7 @@ import (
 
 func main() {
 	backendURL := env("BACKEND_BASE_URL", "http://localhost:8080")
+	backendPublicURL := env("BACKEND_PUBLIC_URL", backendURL)
 	publicURL := env("MCP_PUBLIC_URL", "http://localhost:8087")
 	addr := env("LISTEN_ADDR", ":8087")
 	secret := os.Getenv("MCP_INTROSPECTION_SECRET")
@@ -21,9 +22,10 @@ func main() {
 	}
 
 	handler := server.New(server.Config{
-		BackendURL:   backendURL,
-		PublicURL:    publicURL,
-		Introspector: auth.NewIntrospector(backendURL, secret),
+		BackendURL:       backendURL,
+		BackendPublicURL: backendPublicURL,
+		PublicURL:        publicURL,
+		Introspector:     auth.NewIntrospector(backendURL, secret),
 	})
 
 	log.Printf("norviq-mcp listening on %s (backend=%s)", addr, backendURL)
