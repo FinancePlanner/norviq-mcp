@@ -60,7 +60,7 @@ jobs:
       - name: Checkout norviq-infra
         uses: actions/checkout@v4
         with:
-          repository: FinancePlanner/norviq-infra
+          repository: LuminaVault/LuminaVaultInfra
           # A PAT (or GitHub App token) with contents:write on norviq-infra.
           # Add it as an Actions secret named INFRA_TOKEN in this repo.
           token: ${{ secrets.INFRA_TOKEN }}
@@ -71,14 +71,14 @@ jobs:
 
       - name: Write staging image tag
         run: |
-          yq -i ".image.tag = \"${{ needs.build.outputs.sha_tag }}\"" apps/mcp/values-staging.yaml
+          yq -i ".image.tag = \"${{ needs.build.outputs.sha_tag }}\"" apps/norviq/mcp/values-staging.yaml
 
       - name: Commit and push
         run: |
           git config user.name "norviq-mcp-ci"
           git config user.email "ci@norviq.org"
           if git diff --quiet; then echo "no tag change"; exit 0; fi
-          git add apps/mcp/values-staging.yaml
+          git add apps/norviq/mcp/values-staging.yaml
           git commit -m "chore(mcp): bump staging image to ${{ needs.build.outputs.sha_tag }}"
           git push origin main
 
