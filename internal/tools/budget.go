@@ -33,6 +33,18 @@ func registerBudget(s *mcp.Server, client *api.Client, principal *auth.Principal
 			Month int `json:"month,omitempty" jsonschema:"month number 1 through 12"`
 		}
 		mcp.AddTool(s, &mcp.Tool{
+			Name:        "get_dca_capacity",
+			Description: "Convert leftover budget and category overspend into fractional units of the user's chosen DCA holding. Informational only — not an order.",
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+			raw, err := client.GetDcaCapacity(ctx)
+			if err != nil {
+				return fail(err), nil, nil
+			}
+			return textResult(prettyJSON(raw), false), nil, nil
+		})
+
+		mcp.AddTool(s, &mcp.Tool{
 			Name:        "list_budget_snapshots",
 			Description: "List monthly budget snapshots, optionally filtered by year and month.",
 			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},

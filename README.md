@@ -1,15 +1,19 @@
 # norviq-mcp
 
 Remote [MCP](https://modelcontextprotocol.io) server that lets external AI
-clients (Claude, ChatGPT, Cursor, Gemini, …) operate on a user's norviq account
-over Streamable HTTP.
+clients (Claude, ChatGPT, Cursor, Hermes, Gemini, …) operate on a user's
+Norviq account over Streamable HTTP.
+
+**Production:** `https://mcp.norviq.org/mcp`  
+**Canonical product/eng doc:** [`Documentation/mcp-integration.md`](../Documentation/mcp-integration.md)  
+**Operator smoke tests:** [`mcp-test.md`](../mcp-test.md)
 
 ## Who pays for what
 
 | Piece | Who provides | Who pays |
 |-------|--------------|----------|
 | MCP tools + portfolio/expense/market data | Norviq | Included with Norviq Pro (connector access) |
-| LLM tokens (chat / reasoning) | User's AI client (Claude, Cursor, ChatGPT, …) | **User** — Norviq does not bill model usage for MCP |
+| LLM tokens (chat / reasoning) | User's AI client (Claude, Cursor, ChatGPT, Hermes, …) | **User** — Norviq does not bill model usage for MCP |
 | Norviq personal access token (`nvq_pat_…`) | User mints in Settings → API access | Auth to Norviq tools only — **not** an OpenAI/Anthropic API key |
 
 Bring-your-own-client is intentional: Norviq stays the data/tool layer; users keep LLM costs on their existing AI subscription.
@@ -20,7 +24,7 @@ In-app Norviq Assistant (first-party UI) is separate and uses Norviq’s server-
 
 ```
 AI client ──Bearer (personal access token / OAuth)──▶ norviq-mcp ──REST──▶ norviq-backend
-         └── (LLM billed by Claude / Cursor / ChatGPT — not by Norviq)
+         └── (LLM billed by Claude / Cursor / ChatGPT / Hermes — not by Norviq)
 ```
 
 - `/mcp` — Streamable HTTP MCP endpoint. Every request must carry a norviq
@@ -29,22 +33,40 @@ AI client ──Bearer (personal access token / OAuth)──▶ norviq-mcp ─�
   (cached 60s). MCP-connector access requires norviq Pro; the token's scopes
   determine which tools are exposed.
 - `/.well-known/oauth-protected-resource` — RFC 9728 metadata pointing clients
-  at the backend as the authorization server (used once OAuth 2.1 lands).
+  at the backend as the authorization server (`https://api.norviq.org`).
 - `/healthz`, `/readyz` — liveness/readiness.
 
-## Tools (v1)
+## Tools
+
+Tools are registered per session only when the token holds their scope.
 
 | Scope | Tools |
-|-------|-------|
-| `expenses:read` | `list_expenses`, `list_expense_categories` |
-| `expenses:write` | `add_expense`, `update_expense`, `delete_expense` |
+|-------|--------|
+| `expenses:read` | `list_expenses`, `list_expense_categories`, `list_recurring_expenses`, `export_expenses_csv`, `get_dca_capacity` |
+| `expenses:write` | `add_expense`, `update_expense`, `delete_expense`, recurring add/update/delete, `import_expenses_csv` |
 | `reports:read` | `get_spending_report` |
-| `market:read` | `get_quote`, `search_symbols` |
+| `market:read` | `get_quote`, `search_symbols`, `get_portfolio_summary` |
 | `insights:read` | `get_insights` |
 | `tax:read` | `get_tax_dashboard`, `get_tax_loss_carryforwards` |
+| planning / budget (see `internal/tools`) | `list_goals`, goal CRUD, budget snapshot/item CRUD |
 
-Tools are registered per session only when the token holds their scope, so a
-client never sees a tool it cannot use.
+Write tools require the matching `:write` scope and use the pending-confirmation flow where implemented. Source of truth: `internal/tools/*.go`.
+
+## Connect a client (quick)
+
+```bash
+# Claude Code / similar
+claude mcp add --transport http norviq https://mcp.norviq.org/mcp \
+  --header "Authorization: Bearer nvq_pat_…"
+
+# Hermes (on the agent host, after minting a PAT on the web app)
+sudo hermes --profile mac-mcp mcp add norviq \
+  --url https://mcp.norviq.org/mcp \
+  --auth header
+```
+
+Full recipes (Claude app, ChatGPT, Cursor, Hermes, Inspector):  
+[`Documentation/mcp-integration.md`](../Documentation/mcp-integration.md).
 
 ## Configuration
 
@@ -75,3 +97,12 @@ claude mcp add --transport http norviq http://localhost:8087/mcp \
 ```sh
 make test
 ```
+
+Production smoke tests and failure modes: [`mcp-test.md`](../mcp-test.md).
+
+## Product UI
+
+| Surface | Path |
+|---------|------|
+| Web | Settings → **API access** (`/settings/api-access`), Integrations |
+| iOS | Profile → Integrations → **Connect an AI agent (MCP)** |

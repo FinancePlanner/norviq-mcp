@@ -28,6 +28,14 @@ func (c *Client) SearchSymbols(ctx context.Context, query string) (json.RawMessa
 	return out, nil
 }
 
+func (c *Client) GetPortfolioSummary(ctx context.Context) (json.RawMessage, error) {
+	var out json.RawMessage
+	if err := c.do(ctx, http.MethodGet, "/v1/portfolio/summary", nil, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *Client) GetInsightsSummary(ctx context.Context) (json.RawMessage, error) {
 	var out json.RawMessage
 	if err := c.do(ctx, http.MethodGet, "/v1/insights/summary", nil, nil, &out); err != nil {
