@@ -42,6 +42,18 @@ func registerMarket(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			}
 			return textResult(prettyJSON(raw), false), nil, nil
 		})
+
+		mcp.AddTool(s, &mcp.Tool{
+			Name:        "get_portfolio_summary",
+			Description: "Get the user's portfolio summary: value, weights, and holdings.",
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+			raw, err := client.GetPortfolioSummary(ctx)
+			if err != nil {
+				return fail(err), nil, nil
+			}
+			return textResult(prettyJSON(raw), false), nil, nil
+		})
 	}
 
 	if p.Scopes["insights:read"] {

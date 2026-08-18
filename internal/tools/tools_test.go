@@ -40,6 +40,10 @@ func fakeBackend(t *testing.T) (*httptest.Server, *[]string) {
 			_, _ = w.Write([]byte(`{"taxYear":2026,"jurisdiction":"US","taxDrag":{"projectedYearEndTax":{"amount":1200,"currency":"USD"}},"locationOpportunities":[{"id":"location:1"}],"opportunities":[{"id":"lot-1","replacementCandidates":[{"symbol":"REPL"}]}],"disclaimer":"Educational estimate only."}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/tax/loss-carryforwards":
 			_, _ = w.Write([]byte(`{"asOfTaxYear":2026,"balances":[]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/budget/dca-capacity":
+			_, _ = w.Write([]byte(`{"symbol":"VWCE","resolvedFrom":"default","quoteStale":true,"surplusAmount":240,"surplusUnits":1.82,"currencyCode":"EUR","categories":[],"disclaimer":"Equivalent at last price."}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/portfolio/summary":
+			_, _ = w.Write([]byte(`{"totalMarketValue":10000}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

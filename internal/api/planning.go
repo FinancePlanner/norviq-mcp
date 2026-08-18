@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -58,6 +59,14 @@ type RecurringExpenseRequest struct {
 	Frequency        string  `json:"frequency"`
 	SplitMode        string  `json:"splitMode"`
 	UserSharePercent float64 `json:"userSharePercent"`
+}
+
+func (c *Client) GetDcaCapacity(ctx context.Context) (json.RawMessage, error) {
+	var out json.RawMessage
+	if err := c.do(ctx, http.MethodGet, "/v1/budget/dca-capacity", nil, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *Client) ListBudgetSnapshots(ctx context.Context, year, month int) ([]BudgetSnapshot, error) {
