@@ -43,6 +43,11 @@ func registerMarket(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			return textResult(prettyJSON(raw), false), nil, nil
 		})
 
+	}
+
+	// Holdings are not market data. Gated on portfolio:read, with market:read still
+	// accepted so tokens issued before that scope existed keep the tool.
+	if p.Scopes["portfolio:read"] || p.Scopes["market:read"] {
 		mcp.AddTool(s, &mcp.Tool{
 			Name:        "get_portfolio_summary",
 			Description: "Get the user's portfolio summary: value, weights, and holdings.",

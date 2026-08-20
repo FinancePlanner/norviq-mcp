@@ -45,7 +45,8 @@ Tools are registered per session only when the token holds their scope.
 | `expenses:read` | `list_expenses`, `list_expense_categories`, `list_recurring_expenses`, `export_expenses_csv`, `get_dca_capacity` |
 | `expenses:write` | `add_expense`, `update_expense`, `delete_expense`, recurring add/update/delete, `import_expenses_csv` |
 | `reports:read` | `get_spending_report` |
-| `market:read` | `get_quote`, `search_symbols`, `get_portfolio_summary` |
+| `market:read` | `get_quote`, `search_symbols` |
+| `portfolio:read` | `get_portfolio_summary` (also granted by legacy `market:read`) |
 | `insights:read` | `get_insights` |
 | `tax:read` | `get_tax_dashboard`, `get_tax_loss_carryforwards` |
 | planning / budget (see `internal/tools`) | `list_goals`, goal CRUD, budget snapshot/item CRUD |
