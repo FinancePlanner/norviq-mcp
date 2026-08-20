@@ -83,9 +83,12 @@ func registerBudget(s *mcp.Server, client *api.Client, principal *auth.Principal
 		if args.NetSalary < 0 || strings.TrimSpace(args.MonthStart) == "" {
 			return textResult("Month and non-negative net income are required.", true), nil, nil
 		}
-		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Create the budget for %s with net income %.2f?", args.MonthStart, args.NetSalary))
+		confirmed, pending, err := confirmMutation(req, fmt.Sprintf("Create the budget for %s with net income %.2f?", args.MonthStart, args.NetSalary))
 		if err != nil {
 			return fail(err), nil, nil
+		}
+		if pending != nil {
+			return pending, nil, nil
 		}
 		if !confirmed {
 			return textResult("Budget creation was not confirmed.", false), nil, nil
@@ -107,9 +110,12 @@ func registerBudget(s *mcp.Server, client *api.Client, principal *auth.Principal
 		Name:        "update_budget_snapshot",
 		Description: "Propose replacing a monthly budget snapshot. Requires MCP form confirmation.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args updateSnapshotArgs) (*mcp.CallToolResult, any, error) {
-		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Replace budget snapshot %q with the proposed values?", args.ID))
+		confirmed, pending, err := confirmMutation(req, fmt.Sprintf("Replace budget snapshot %q with the proposed values?", args.ID))
 		if err != nil {
 			return fail(err), nil, nil
+		}
+		if pending != nil {
+			return pending, nil, nil
 		}
 		if !confirmed {
 			return textResult("Budget update was not confirmed.", false), nil, nil
@@ -131,9 +137,12 @@ func registerBudget(s *mcp.Server, client *api.Client, principal *auth.Principal
 		Description: "Propose deleting a monthly budget and its items. Requires MCP form confirmation.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptrBool(true)},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args idArgs) (*mcp.CallToolResult, any, error) {
-		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Permanently delete budget snapshot %q and its items?", args.ID))
+		confirmed, pending, err := confirmMutation(req, fmt.Sprintf("Permanently delete budget snapshot %q and its items?", args.ID))
 		if err != nil {
 			return fail(err), nil, nil
+		}
+		if pending != nil {
+			return pending, nil, nil
 		}
 		if !confirmed {
 			return textResult("Budget deletion was not confirmed.", false), nil, nil
@@ -149,9 +158,12 @@ func registerBudget(s *mcp.Server, client *api.Client, principal *auth.Principal
 		Description: "Propose adding a planned budget item. Requires MCP form confirmation.",
 		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args budgetItemArgs) (*mcp.CallToolResult, any, error) {
-		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Add budget item %q for %.2f?", args.Title, args.PlannedAmount))
+		confirmed, pending, err := confirmMutation(req, fmt.Sprintf("Add budget item %q for %.2f?", args.Title, args.PlannedAmount))
 		if err != nil {
 			return fail(err), nil, nil
+		}
+		if pending != nil {
+			return pending, nil, nil
 		}
 		if !confirmed {
 			return textResult("Budget item creation was not confirmed.", false), nil, nil
@@ -173,9 +185,12 @@ func registerBudget(s *mcp.Server, client *api.Client, principal *auth.Principal
 		Name:        "update_budget_item",
 		Description: "Propose replacing a planned budget item. Requires MCP form confirmation.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args updateItemArgs) (*mcp.CallToolResult, any, error) {
-		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Replace budget item %q with the proposed values?", args.ID))
+		confirmed, pending, err := confirmMutation(req, fmt.Sprintf("Replace budget item %q with the proposed values?", args.ID))
 		if err != nil {
 			return fail(err), nil, nil
+		}
+		if pending != nil {
+			return pending, nil, nil
 		}
 		if !confirmed {
 			return textResult("Budget item update was not confirmed.", false), nil, nil
@@ -193,9 +208,12 @@ func registerBudget(s *mcp.Server, client *api.Client, principal *auth.Principal
 		Description: "Propose deleting a planned budget item. Requires MCP form confirmation.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptrBool(true)},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args idArgs) (*mcp.CallToolResult, any, error) {
-		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Permanently delete budget item %q?", args.ID))
+		confirmed, pending, err := confirmMutation(req, fmt.Sprintf("Permanently delete budget item %q?", args.ID))
 		if err != nil {
 			return fail(err), nil, nil
+		}
+		if pending != nil {
+			return pending, nil, nil
 		}
 		if !confirmed {
 			return textResult("Budget item deletion was not confirmed.", false), nil, nil

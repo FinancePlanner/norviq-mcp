@@ -49,9 +49,12 @@ func registerRecurring(s *mcp.Server, client *api.Client, principal *auth.Princi
 		if strings.TrimSpace(args.Title) == "" || args.Amount <= 0 {
 			return textResult("A title and positive amount are required.", true), nil, nil
 		}
-		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Add recurring expense %q for %.2f %s?", args.Title, args.Amount, args.Frequency))
+		confirmed, pending, err := confirmMutation(req, fmt.Sprintf("Add recurring expense %q for %.2f %s?", args.Title, args.Amount, args.Frequency))
 		if err != nil {
 			return fail(err), nil, nil
+		}
+		if pending != nil {
+			return pending, nil, nil
 		}
 		if !confirmed {
 			return textResult("Recurring expense creation was not confirmed.", false), nil, nil
@@ -72,9 +75,12 @@ func registerRecurring(s *mcp.Server, client *api.Client, principal *auth.Princi
 		Name:        "update_recurring_expense",
 		Description: "Propose replacing a recurring expense template. Requires MCP form confirmation.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args updateArgs) (*mcp.CallToolResult, any, error) {
-		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Replace recurring expense %q with the proposed values?", args.ID))
+		confirmed, pending, err := confirmMutation(req, fmt.Sprintf("Replace recurring expense %q with the proposed values?", args.ID))
 		if err != nil {
 			return fail(err), nil, nil
+		}
+		if pending != nil {
+			return pending, nil, nil
 		}
 		if !confirmed {
 			return textResult("Recurring expense update was not confirmed.", false), nil, nil
@@ -95,9 +101,12 @@ func registerRecurring(s *mcp.Server, client *api.Client, principal *auth.Princi
 		Description: "Propose deleting a recurring expense template. Requires MCP form confirmation.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptrBool(true)},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args deleteArgs) (*mcp.CallToolResult, any, error) {
-		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Permanently delete recurring expense %q?", args.ID))
+		confirmed, pending, err := confirmMutation(req, fmt.Sprintf("Permanently delete recurring expense %q?", args.ID))
 		if err != nil {
 			return fail(err), nil, nil
+		}
+		if pending != nil {
+			return pending, nil, nil
 		}
 		if !confirmed {
 			return textResult("Recurring expense deletion was not confirmed.", false), nil, nil

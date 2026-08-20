@@ -24,9 +24,12 @@ func registerCSV(s *mcp.Server, client *api.Client, p *auth.Principal) {
 				dryRun = *args.DryRun
 			}
 			if !dryRun {
-				confirmed, err := confirmMutation(ctx, req.Session, "Import the validated CSV rows into your expense history?")
+				confirmed, pending, err := confirmMutation(req, "Import the validated CSV rows into your expense history?")
 				if err != nil {
 					return fail(err), nil, nil
+				}
+				if pending != nil {
+					return pending, nil, nil
 				}
 				if !confirmed {
 					return textResult("CSV import was not confirmed.", false), nil, nil

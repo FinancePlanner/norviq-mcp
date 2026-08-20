@@ -43,9 +43,12 @@ func registerPlanning(s *mcp.Server, client *api.Client, principal *auth.Princip
 		if title == "" {
 			return textResult("Goal title is required.", true), nil, nil
 		}
-		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Create the financial goal %q?", title))
+		confirmed, pending, err := confirmMutation(req, fmt.Sprintf("Create the financial goal %q?", title))
 		if err != nil {
 			return fail(err), nil, nil
+		}
+		if pending != nil {
+			return pending, nil, nil
 		}
 		if !confirmed {
 			return textResult("Goal creation was not confirmed.", false), nil, nil
@@ -70,9 +73,12 @@ func registerPlanning(s *mcp.Server, client *api.Client, principal *auth.Princip
 		if strings.TrimSpace(args.ID) == "" || title == "" {
 			return textResult("Goal id and title are required.", true), nil, nil
 		}
-		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Rename goal %q to %q?", args.ID, title))
+		confirmed, pending, err := confirmMutation(req, fmt.Sprintf("Rename goal %q to %q?", args.ID, title))
 		if err != nil {
 			return fail(err), nil, nil
+		}
+		if pending != nil {
+			return pending, nil, nil
 		}
 		if !confirmed {
 			return textResult("Goal update was not confirmed.", false), nil, nil
@@ -93,9 +99,12 @@ func registerPlanning(s *mcp.Server, client *api.Client, principal *auth.Princip
 		Description: "Propose deleting a financial goal. The client must show an MCP confirmation form before Norviq writes anything.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptrBool(true)},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args deleteArgs) (*mcp.CallToolResult, any, error) {
-		confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Permanently delete goal %q?", args.ID))
+		confirmed, pending, err := confirmMutation(req, fmt.Sprintf("Permanently delete goal %q?", args.ID))
 		if err != nil {
 			return fail(err), nil, nil
+		}
+		if pending != nil {
+			return pending, nil, nil
 		}
 		if !confirmed {
 			return textResult("Goal deletion was not confirmed.", false), nil, nil

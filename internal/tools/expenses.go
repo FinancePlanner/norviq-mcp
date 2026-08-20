@@ -90,7 +90,7 @@ func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
 		}, func(ctx context.Context, req *mcp.CallToolRequest, args addArgs) (*mcp.CallToolResult, any, error) {
 			a := args
-			confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf(
+			confirmed, pending, err := confirmMutation(req, fmt.Sprintf(
 				"Add expense %q for %.2f on %s?",
 				a.Title,
 				a.Amount,
@@ -98,6 +98,9 @@ func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			))
 			if err != nil {
 				return fail(err), nil, nil
+			}
+			if pending != nil {
+				return pending, nil, nil
 			}
 			if !confirmed {
 				return textResult("Expense creation was not confirmed.", false), nil, nil
@@ -139,9 +142,12 @@ func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			if a.OccurredOn != "" {
 				patch["occurredOn"] = a.OccurredOn
 			}
-			confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Apply the proposed changes to expense %q?", a.ID))
+			confirmed, pending, err := confirmMutation(req, fmt.Sprintf("Apply the proposed changes to expense %q?", a.ID))
 			if err != nil {
 				return fail(err), nil, nil
+			}
+			if pending != nil {
+				return pending, nil, nil
 			}
 			if !confirmed {
 				return textResult("Expense update was not confirmed.", false), nil, nil
@@ -162,9 +168,12 @@ func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			Description: "Propose deleting an expense. The client must show an MCP confirmation form before Norviq writes anything.",
 			Annotations: &mcp.ToolAnnotations{DestructiveHint: ptrBool(true)},
 		}, func(ctx context.Context, req *mcp.CallToolRequest, args deleteArgs) (*mcp.CallToolResult, any, error) {
-			confirmed, err := confirmMutation(ctx, req.Session, fmt.Sprintf("Permanently delete expense %q?", args.ID))
+			confirmed, pending, err := confirmMutation(req, fmt.Sprintf("Permanently delete expense %q?", args.ID))
 			if err != nil {
 				return fail(err), nil, nil
+			}
+			if pending != nil {
+				return pending, nil, nil
 			}
 			if !confirmed {
 				return textResult("Expense deletion was not confirmed.", false), nil, nil
