@@ -80,7 +80,7 @@ func registerMarket(s *mcp.Server, client *api.Client, p *auth.Principal) {
 }
 
 func prettyJSON(raw json.RawMessage) string {
-	var buf json.RawMessage = raw
+	buf := raw
 	out, err := json.MarshalIndent(&buf, "", "  ")
 	if err != nil {
 		return string(raw)

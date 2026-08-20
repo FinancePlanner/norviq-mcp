@@ -48,15 +48,15 @@ func instrumentHTTP(next http.Handler) http.Handler {
 
 func metricsHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	fmt.Fprintln(w, "# HELP norviq_mcp_http_requests_total HTTP requests received by the MCP service.")
-	fmt.Fprintln(w, "# TYPE norviq_mcp_http_requests_total counter")
-	fmt.Fprintf(w, "norviq_mcp_http_requests_total %d\n", httpRequestsTotal.Load())
-	fmt.Fprintln(w, "# HELP norviq_mcp_auth_failures_total HTTP requests rejected with 401 or 403.")
-	fmt.Fprintln(w, "# TYPE norviq_mcp_auth_failures_total counter")
-	fmt.Fprintf(w, "norviq_mcp_auth_failures_total %d\n", authFailuresTotal.Load())
-	fmt.Fprintln(w, "# HELP norviq_mcp_ready Whether the MCP process is ready to serve requests.")
-	fmt.Fprintln(w, "# TYPE norviq_mcp_ready gauge")
-	fmt.Fprintln(w, "norviq_mcp_ready 1")
+	_, _ = fmt.Fprintln(w, "# HELP norviq_mcp_http_requests_total HTTP requests received by the MCP service.")
+	_, _ = fmt.Fprintln(w, "# TYPE norviq_mcp_http_requests_total counter")
+	_, _ = fmt.Fprintf(w, "norviq_mcp_http_requests_total %d\n", httpRequestsTotal.Load())
+	_, _ = fmt.Fprintln(w, "# HELP norviq_mcp_auth_failures_total HTTP requests rejected with 401 or 403.")
+	_, _ = fmt.Fprintln(w, "# TYPE norviq_mcp_auth_failures_total counter")
+	_, _ = fmt.Fprintf(w, "norviq_mcp_auth_failures_total %d\n", authFailuresTotal.Load())
+	_, _ = fmt.Fprintln(w, "# HELP norviq_mcp_ready Whether the MCP process is ready to serve requests.")
+	_, _ = fmt.Fprintln(w, "# TYPE norviq_mcp_ready gauge")
+	_, _ = fmt.Fprintln(w, "norviq_mcp_ready 1")
 }
 
 type Config struct {

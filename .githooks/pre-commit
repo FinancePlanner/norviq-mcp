@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Pre-commit: format, then lint, before anything lands in git.
+# golangci-lint version must stay in lockstep with CI (.github/workflows/).
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+# Remember what was already staged so we only re-add those after formatting.
+staged_go="$(git diff --cached --name-only --diff-filter=ACM -- '*.go' || true)"
+
+echo "pre-commit: gofumpt -w ."
+go tool gofumpt -w .
+
+# Re-stage only files that were already in the index (partial commits stay partial).
+if [[ -n "${staged_go}" ]]; then
+  while IFS= read -r f; do
+    [[ -z "${f}" ]] && continue
+    [[ -f "${f}" ]] || continue
+    git add -- "${f}"
+  done <<< "${staged_go}"
+  echo "pre-commit: re-staged previously staged .go files after gofumpt"
+fi
+
+# Fail closed if the binary is missing — a skipped lint is not a pass.
+if ! command -v golangci-lint >/dev/null 2>&1; then
+  echo "pre-commit: golangci-lint not on PATH. Install v2.13.0 to match CI:" >&2
+  echo "  https://golangci-lint.run/welcome/install/" >&2
+  exit 1
+fi
+
+echo "pre-commit: golangci-lint run"
+golangci-lint run
+
+echo "pre-commit: ok"
