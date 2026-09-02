@@ -44,6 +44,14 @@ func fakeBackend(t *testing.T) (*httptest.Server, *[]string) {
 			_, _ = w.Write([]byte(`{"symbol":"VWCE","resolvedFrom":"default","quoteStale":true,"surplusAmount":240,"surplusUnits":1.82,"currencyCode":"EUR","categories":[],"disclaimer":"Equivalent at last price."}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/portfolio/summary":
 			_, _ = w.Write([]byte(`{"totalMarketValue":10000}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/news/feed":
+			_, _ = w.Write([]byte(`[{"id":"n1","symbol":"AAPL","headline":"Apple launches thing","source":"Norviq","url":"https://example.com/aapl","summary":"A short summary","publishedAt":"2026-09-01T10:00:00Z","createdAt":"2026-09-01T10:00:00Z","updatedAt":"2026-09-01T10:00:00Z"}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/market/search":
+			_, _ = w.Write([]byte(`[{"symbol":"AAPL","name":"Apple Inc.","exchange":"NASDAQ","currency":"USD","conid":"123"},{"symbol":"AAPLX","name":"Apple Holdings","exchange":"NYSE","currency":"USD","conid":"456"}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/market/news":
+			_, _ = w.Write([]byte(`[{"title":"Apple in focus","url":"https://example.com/market","date":"2026-09-01"}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/market/news/general":
+			_, _ = w.Write([]byte(`[{"title":"Markets rally","url":"https://example.com/rally","date":"2026-09-01"}]`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -224,5 +232,108 @@ func TestTaxReadScopeExposesAndCallsTaxTools(t *testing.T) {
 	}
 	if len(*seen) == 0 || (*seen)[len(*seen)-1] != "GET /v1/tax/dashboard" {
 		t.Fatalf("backend did not receive tax dashboard request; saw %v", *seen)
+	}
+}
+
+func TestMarketReadScopeExposesNewsTool(t *testing.T) {
+	backend, _ := fakeBackend(t)
+	cs := connect(t, map[string]bool{"market:read": true}, backend.URL, nil)
+
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, tool := range res.Tools {
+		names[tool.Name] = true
+	}
+	if !names["get_news"] {
+		t.Fatal("expected get_news to be exposed for market:read")
+	}
+}
+
+func TestGetNewsDefaultUsesTrackedFeed(t *testing.T) {
+	backend, seen := fakeBackend(t)
+	cs := connect(t, map[string]bool{"market:read": true}, backend.URL, nil)
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "get_news", Arguments: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("get_news returned error: %+v", res.Content)
+	}
+	content, _ := json.Marshal(res.Content)
+	if !strings.Contains(string(content), "Apple launches thing") {
+		t.Fatalf("tracked feed item missing from result: %s", content)
+	}
+	found := false
+	for _, s := range *seen {
+		if s == "GET /v1/news/feed" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("backend never received tracked news request; saw %v", *seen)
+	}
+}
+
+func TestGetNewsQueryResolvesSymbolsAndFetchesMarketNews(t *testing.T) {
+	backend, seen := fakeBackend(t)
+	cs := connect(t, map[string]bool{"market:read": true}, backend.URL, nil)
+
+	args, _ := json.Marshal(map[string]any{"query": "Apple", "max_results": 3})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "get_news", Arguments: json.RawMessage(args)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("get_news returned error: %+v", res.Content)
+	}
+	content, _ := json.Marshal(res.Content)
+	for _, expected := range []string{"Apple in focus", "AAPL"} {
+		if !strings.Contains(string(content), expected) {
+			t.Fatalf("query news result missing %q: %s", expected, content)
+		}
+	}
+	seenSearch := false
+	seenMarket := false
+	for _, s := range *seen {
+		if s == "GET /v1/market/search" {
+			seenSearch = true
+		}
+		if s == "GET /v1/market/news" {
+			seenMarket = true
+		}
+	}
+	if !seenSearch || !seenMarket {
+		t.Fatalf("backend did not receive both search and market news requests; saw %v", *seen)
+	}
+}
+
+func TestGetNewsGeneralSourceUsesArchiveWindow(t *testing.T) {
+	backend, seen := fakeBackend(t)
+	cs := connect(t, map[string]bool{"market:read": true}, backend.URL, nil)
+
+	args, _ := json.Marshal(map[string]any{"source": "general", "lookback_days": 3, "max_results": 3})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "get_news", Arguments: json.RawMessage(args)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("get_news returned error: %+v", res.Content)
+	}
+	content, _ := json.Marshal(res.Content)
+	if !strings.Contains(string(content), "Markets rally") {
+		t.Fatalf("general news item missing from result: %s", content)
+	}
+	found := false
+	for _, s := range *seen {
+		if s == "GET /v1/market/news/general" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("backend never received general market news request; saw %v", *seen)
 	}
 }

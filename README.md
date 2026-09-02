@@ -18,7 +18,7 @@ Norviq account over Streamable HTTP.
 
 Bring-your-own-client is intentional: Norviq stays the data/tool layer; users keep LLM costs on their existing AI subscription.
 
-In-app Norviq Assistant (first-party UI) is separate and uses Norviq’s server-side provider key when enabled.
+Q, the in-app assistant (first-party UI), is separate and uses Norviq’s server-side provider key when enabled.
 
 ## How it works
 
@@ -45,11 +45,13 @@ Tools are registered per session only when the token holds their scope.
 | `expenses:read` | `list_expenses`, `list_expense_categories`, `list_recurring_expenses`, `export_expenses_csv`, `get_dca_capacity` |
 | `expenses:write` | `add_expense`, `update_expense`, `delete_expense`, recurring add/update/delete, `import_expenses_csv` |
 | `reports:read` | `get_spending_report` |
-| `market:read` | `get_quote`, `search_symbols` |
+| `market:read` | `get_quote`, `search_symbols`, `get_news` |
 | `portfolio:read` | `get_portfolio_summary` (also granted by legacy `market:read`) |
 | `insights:read` | `get_insights` |
 | `tax:read` | `get_tax_dashboard`, `get_tax_loss_carryforwards` |
 | planning / budget (see `internal/tools`) | `list_goals`, goal CRUD, budget snapshot/item CRUD |
+
+`get_news` is the one news tool: `source=tracked` (the user's own feed for held/watched symbols, the default with no query), `source=market` (per-symbol headlines from Norviq's archive; a `query` is resolved to up to three symbols via symbol search), or `source=general` (broad market headlines). Every item is `{kind, symbol, title, source, published_at, url, summary}`, newest first, capped by `max_results` (1–50, default 10) and `lookback_days` (default 7). The body is wrapped in `<untrusted_data>` because headlines are third-party text.
 
 Write tools require the matching `:write` scope and use the pending-confirmation flow where implemented. Source of truth: `internal/tools/*.go`.
 

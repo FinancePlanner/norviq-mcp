@@ -1,6 +1,6 @@
 // Package api is a focused HTTP client for the norviq-backend REST surface the
-// MCP tools call. It intentionally covers only the expenses and reports
-// endpoints rather than generating the full 10k-line OpenAPI client — the tool
+// MCP tools call. It intentionally covers only the endpoints the tool surface
+// needs rather than generating the full 10k-line OpenAPI client — the tool
 // surface is small and stable, and a hand-rolled client keeps the service lean.
 package api
 
