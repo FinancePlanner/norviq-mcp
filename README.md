@@ -49,7 +49,22 @@ Tools are registered per session only when the token holds their scope.
 | `portfolio:read` | `get_portfolio_summary` (also granted by legacy `market:read`) |
 | `insights:read` | `get_insights` |
 | `tax:read` | `get_tax_dashboard`, `get_tax_loss_carryforwards` |
-| planning / budget (see `internal/tools`) | `list_goals`, goal CRUD, budget snapshot/item CRUD |
+| `goals:read` / `goals:write` | `list_goals`, goal CRUD |
+| `budget:read` / `budget:write` | budget snapshot and item CRUD |
+| `watchlist:read` | `list_watchlist`, `list_watchlist_lists` |
+| `watchlist:write` | `upsert_watchlist_items`, `update_watchlist_item`, `remove_watchlist_items`, `create_watchlist_list`, `delete_watchlist_list` |
+| `transactions:read` | `list_transactions` |
+| `transactions:write` | `record_trades`, `update_trade`, `delete_trade` |
+
+Goals and budget moved off `expenses:write` onto their own scopes. A token minted
+before that split keeps its expense tools but loses goal and budget tools until it
+is re-issued.
+
+Batched writes take an array and ask for **one** confirmation covering the whole
+set — writing a seven-symbol watchlist is one prompt, not seven.
+
+`record_trades` is record-keeping for trades already executed at a broker. It
+never places an order: Norviq's broker integration is read-only by construction.
 
 `get_news` is the one news tool: `source=tracked` (the user's own feed for held/watched symbols, the default with no query), `source=market` (per-symbol headlines from Norviq's archive; a `query` is resolved to up to three symbols via symbol search), or `source=general` (broad market headlines). Every item is `{kind, symbol, title, source, published_at, url, summary}`, newest first, capped by `max_results` (1–50, default 10) and `lookback_days` (default 7). The body is wrapped in `<untrusted_data>` because headlines are third-party text.
 

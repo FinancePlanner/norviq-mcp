@@ -41,6 +41,8 @@ func Register(s *mcp.Server, client *api.Client, p *auth.Principal) {
 	registerPlanning(s, client, p)
 	registerBudget(s, client, p)
 	registerRecurring(s, client, p)
+	registerWatchlist(s, client, p)
+	registerTransactions(s, client, p)
 }
 
 func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {

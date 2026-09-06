@@ -3,6 +3,7 @@ package tools_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -50,6 +51,27 @@ func fakeBackend(t *testing.T) (*httptest.Server, *[]string) {
 			_, _ = w.Write([]byte(`[{"symbol":"AAPL","name":"Apple Inc.","exchange":"NASDAQ","currency":"USD","conid":"123"},{"symbol":"AAPLX","name":"Apple Holdings","exchange":"NYSE","currency":"USD","conid":"456"}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/market/news":
 			_, _ = w.Write([]byte(`[{"title":"Apple in focus","url":"https://example.com/market","date":"2026-09-01"}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/watchlist":
+			_, _ = w.Write([]byte(`[{"id":"w1","symbol":"AVGO","note":"Buy at $345-$355","status":"waiting"}]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/watchlist":
+			if r.Header.Get("Idempotency-Key") == "" {
+				t.Error("upsert_watchlist_items did not send an Idempotency-Key")
+			}
+			body, _ := io.ReadAll(r.Body)
+			var req map[string]any
+			_ = json.Unmarshal(body, &req)
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"w1","symbol":"` + req["symbol"].(string) + `","status":"waiting"}`))
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/v1/watchlist/"):
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/transactions":
+			_, _ = w.Write([]byte(`[{"id":"t1","accountId":"a1","instrumentId":"AVGO","type":"buy","quantity":10,"price":350,"currency":"USD","tradeDate":"2026-09-01"}]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/transactions":
+			if r.Header.Get("Idempotency-Key") == "" {
+				t.Error("record_trades did not send an Idempotency-Key")
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"t2","accountId":"a1","instrumentId":"AVGO","type":"buy","quantity":10,"price":350,"currency":"USD","tradeDate":"2026-09-01"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/market/news/general":
 			_, _ = w.Write([]byte(`[{"title":"Markets rally","url":"https://example.com/rally","date":"2026-09-01"}]`))
 		default:
@@ -336,4 +358,220 @@ func TestGetNewsGeneralSourceUsesArchiveWindow(t *testing.T) {
 	if !found {
 		t.Fatalf("backend never received general market news request; saw %v", *seen)
 	}
+}
+
+// --- Watchlist -------------------------------------------------------------
+
+func TestWatchlistBatchWriteAsksOneConfirmation(t *testing.T) {
+	backend, seen := fakeBackend(t)
+	var prompts int
+	elicit := func(ctx context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+		prompts++
+		return acceptElicit(ctx, req)
+	}
+	cs := connect(t, map[string]bool{"watchlist:write": true}, backend.URL, elicit)
+
+	// The seven-row case that could not be written before.
+	items := []map[string]any{}
+	for _, sym := range []string{"AVGO", "TSM", "AMAT", "LRCX", "KLAC", "ASML", "MRVL"} {
+		items = append(items, map[string]any{"symbol": sym, "status": "waiting", "note": "zone"})
+	}
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "upsert_watchlist_items",
+		Arguments: map[string]any{"items": items},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("batch upsert failed: %s", mustJSON(t, res.Content))
+	}
+	if prompts != 1 {
+		t.Errorf("expected exactly 1 confirmation for a 7-row batch, got %d", prompts)
+	}
+	var posts int
+	for _, entry := range *seen {
+		if entry == "POST /v1/watchlist" {
+			posts++
+		}
+	}
+	if posts != 7 {
+		t.Errorf("expected 7 backend writes, got %d", posts)
+	}
+}
+
+func TestWatchlistRejectsUnknownStatusBeforeWriting(t *testing.T) {
+	backend, seen := fakeBackend(t)
+	cs := connect(t, map[string]bool{"watchlist:write": true}, backend.URL, acceptElicit)
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "upsert_watchlist_items",
+		Arguments: map[string]any{
+			"items": []map[string]any{{"symbol": "AVGO", "status": "waitng"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError {
+		t.Error("expected a typo'd status to be rejected")
+	}
+	for _, entry := range *seen {
+		if strings.HasPrefix(entry, "POST /v1/watchlist") {
+			t.Error("an invalid status must not reach the backend")
+		}
+	}
+}
+
+func TestWatchlistDeclinedRemovalDoesNotDelete(t *testing.T) {
+	backend, seen := fakeBackend(t)
+	cs := connect(t, map[string]bool{"watchlist:write": true}, backend.URL, declineElicit)
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "remove_watchlist_items",
+		Arguments: map[string]any{"ids": []string{"w1"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Error("a declined confirmation is a soft outcome, not an error")
+	}
+	for _, entry := range *seen {
+		if strings.HasPrefix(entry, "DELETE ") {
+			t.Error("declined removal must not reach the backend")
+		}
+	}
+}
+
+func TestWatchlistReadScopeHidesWrites(t *testing.T) {
+	backend, _ := fakeBackend(t)
+	cs := connect(t, map[string]bool{"watchlist:read": true}, backend.URL, acceptElicit)
+
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, tool := range res.Tools {
+		names[tool.Name] = true
+	}
+	if !names["list_watchlist"] {
+		t.Error("expected list_watchlist with watchlist:read")
+	}
+	for _, blocked := range []string{"upsert_watchlist_items", "remove_watchlist_items"} {
+		if names[blocked] {
+			t.Errorf("%s must not be exposed without watchlist:write", blocked)
+		}
+	}
+}
+
+// --- Trades ----------------------------------------------------------------
+
+func TestRecordTradesBatchesOneConfirmation(t *testing.T) {
+	backend, seen := fakeBackend(t)
+	var prompts int
+	elicit := func(ctx context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+		prompts++
+		return acceptElicit(ctx, req)
+	}
+	cs := connect(t, map[string]bool{"transactions:write": true}, backend.URL, elicit)
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "record_trades",
+		Arguments: map[string]any{"trades": []map[string]any{
+			{"symbol": "AVGO", "type": "buy", "quantity": 10, "price": 350, "trade_date": "2026-09-01"},
+			{"symbol": "TSM", "type": "sell", "quantity": 5, "price": 410, "trade_date": "2026-09-02"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("record_trades failed: %s", mustJSON(t, res.Content))
+	}
+	if prompts != 1 {
+		t.Errorf("expected 1 confirmation for a 2-trade batch, got %d", prompts)
+	}
+	var posts int
+	for _, entry := range *seen {
+		if entry == "POST /v1/transactions" {
+			posts++
+		}
+	}
+	if posts != 2 {
+		t.Errorf("expected 2 trade writes, got %d", posts)
+	}
+}
+
+func TestRecordTradesRejectsBadSideBeforeWriting(t *testing.T) {
+	backend, seen := fakeBackend(t)
+	cs := connect(t, map[string]bool{"transactions:write": true}, backend.URL, acceptElicit)
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "record_trades",
+		Arguments: map[string]any{"trades": []map[string]any{
+			{"symbol": "AVGO", "type": "short", "quantity": 10, "price": 350, "trade_date": "2026-09-01"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError {
+		t.Error("expected an unsupported trade side to be rejected")
+	}
+	for _, entry := range *seen {
+		if entry == "POST /v1/transactions" {
+			t.Error("an invalid trade must not reach the backend")
+		}
+	}
+}
+
+func TestNewWriteToolsRequireElicitation(t *testing.T) {
+	backend, seen := fakeBackend(t)
+	// No elicitation handler: the client cannot confirm, so a write must refuse
+	// rather than proceed unconfirmed. (server.go additionally strips these tools
+	// from the session on initialize; this harness registers them directly, so
+	// here we assert the second line of defence in the handler itself.)
+	cs := connect(t, map[string]bool{
+		"watchlist:write": true, "transactions:write": true,
+	}, backend.URL, nil)
+
+	cases := []struct {
+		name string
+		args map[string]any
+	}{
+		{"upsert_watchlist_items", map[string]any{
+			"items": []map[string]any{{"symbol": "AVGO", "status": "waiting"}},
+		}},
+		{"remove_watchlist_items", map[string]any{"ids": []string{"w1"}}},
+		{"record_trades", map[string]any{"trades": []map[string]any{
+			{"symbol": "AVGO", "type": "buy", "quantity": 10, "price": 350, "trade_date": "2026-09-01"},
+		}}},
+	}
+	for _, tc := range cases {
+		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+			Name: tc.name, Arguments: tc.args,
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if !res.IsError {
+			t.Errorf("%s must error for a client without form elicitation", tc.name)
+		}
+	}
+	for _, entry := range *seen {
+		if strings.HasPrefix(entry, "POST") || strings.HasPrefix(entry, "DELETE") {
+			t.Errorf("unconfirmed write reached the backend: %s", entry)
+		}
+	}
+}
+
+func mustJSON(t *testing.T, v any) string {
+	t.Helper()
+	out, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
 }

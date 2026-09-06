@@ -25,6 +25,14 @@ var writeToolNames = []string{
 	"add_recurring_expense",
 	"update_recurring_expense",
 	"delete_recurring_expense",
+	"upsert_watchlist_items",
+	"update_watchlist_item",
+	"remove_watchlist_items",
+	"create_watchlist_list",
+	"delete_watchlist_list",
+	"record_trades",
+	"update_trade",
+	"delete_trade",
 }
 
 // WriteToolNames returns a defensive copy of tools that must never be exposed
