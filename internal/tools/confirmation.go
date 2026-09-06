@@ -33,6 +33,13 @@ var writeToolNames = []string{
 	"record_trades",
 	"update_trade",
 	"delete_trade",
+	"add_position",
+	"sell_position",
+	"delete_position",
+	"create_price_target",
+	"delete_price_target",
+	"add_research_note",
+	"delete_research_note",
 }
 
 // WriteToolNames returns a defensive copy of tools that must never be exposed

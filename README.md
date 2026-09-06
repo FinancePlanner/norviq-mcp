@@ -55,6 +55,10 @@ Tools are registered per session only when the token holds their scope.
 | `watchlist:write` | `upsert_watchlist_items`, `update_watchlist_item`, `remove_watchlist_items`, `create_watchlist_list`, `delete_watchlist_list` |
 | `transactions:read` | `list_transactions` |
 | `transactions:write` | `record_trades`, `update_trade`, `delete_trade` |
+| `holdings:read` | `list_positions` |
+| `holdings:write` | `add_position`, `sell_position`, `delete_position` |
+| `targets:read` / `targets:write` | `list_price_targets`, `create_price_target`, `delete_price_target` |
+| `research:read` / `research:write` | `list_research_notes`, `add_research_note`, `delete_research_note` |
 
 Goals and budget moved off `expenses:write` onto their own scopes. A token minted
 before that split keeps its expense tools but loses goal and budget tools until it
