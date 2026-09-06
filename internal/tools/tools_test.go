@@ -8,12 +8,24 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/FinancePlanner/norviq-mcp/internal/api"
 	"github.com/FinancePlanner/norviq-mcp/internal/auth"
 	"github.com/FinancePlanner/norviq-mcp/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// today dates the news fixtures relative to now.
+//
+// These fixtures previously carried an absolute date. get_news filters by a
+// lookback window measured from the current time, so once the calendar moved
+// past that date plus the window, the tests started failing on their own with
+// nothing changed — the failure looked like a code regression but was the
+// fixture rotting. Anchor to now so the window is always satisfied.
+func today() string {
+	return time.Now().UTC().Format("2006-01-02")
+}
 
 // fakeBackend records the requests the tools make and returns canned responses.
 func fakeBackend(t *testing.T) (*httptest.Server, *[]string) {
@@ -50,7 +62,7 @@ func fakeBackend(t *testing.T) (*httptest.Server, *[]string) {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/market/search":
 			_, _ = w.Write([]byte(`[{"symbol":"AAPL","name":"Apple Inc.","exchange":"NASDAQ","currency":"USD","conid":"123"},{"symbol":"AAPLX","name":"Apple Holdings","exchange":"NYSE","currency":"USD","conid":"456"}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/market/news":
-			_, _ = w.Write([]byte(`[{"title":"Apple in focus","url":"https://example.com/market","date":"2026-09-01"}]`))
+			_, _ = w.Write([]byte(`[{"title":"Apple in focus","url":"https://example.com/market","date":"` + today() + `"}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/watchlist":
 			_, _ = w.Write([]byte(`[{"id":"w1","symbol":"AVGO","note":"Buy at $345-$355","status":"waiting"}]`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/watchlist":
@@ -86,7 +98,7 @@ func fakeBackend(t *testing.T) (*httptest.Server, *[]string) {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/research":
 			_, _ = w.Write([]byte(`[{"id":"r1","symbol":"AVGO","thesis":"Networking demand"}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/market/news/general":
-			_, _ = w.Write([]byte(`[{"title":"Markets rally","url":"https://example.com/rally","date":"2026-09-01"}]`))
+			_, _ = w.Write([]byte(`[{"title":"Markets rally","url":"https://example.com/rally","date":"` + today() + `"}]`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
