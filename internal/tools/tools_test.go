@@ -73,7 +73,9 @@ func fakeBackend(t *testing.T) (*httptest.Server, *[]string) {
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"id":"t2","accountId":"a1","instrumentId":"AVGO","type":"buy","quantity":10,"price":350,"currency":"USD","tradeDate":"2026-09-01"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/stocks":
-			_, _ = w.Write([]byte(`{"items":[{"id":"s1","symbol":"AVGO","shares":10,"buyPrice":350,"buyDate":"2026-09-01","category":"stock","createdAt":"2026-09-01T10:00:00Z"}],"nextCursor":null}`))
+			// GET /v1/stocks answers with a bare array; the cursor rides in X-Next-Cursor.
+			w.Header().Set("X-Next-Cursor", "cursor-2")
+			_, _ = w.Write([]byte(`[{"id":"s1","symbol":"AVGO","shares":10,"buyPrice":350,"buyDate":"2026-09-01","category":"stock","createdAt":"2026-09-01T10:00:00Z"}]`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/stocks":
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"id":"s2","symbol":"TSM","shares":5,"buyPrice":410,"buyDate":"2026-09-02","category":"stock"}`))
@@ -715,5 +717,27 @@ func TestEveryMutatingToolIsInTheWriteAllowlist(t *testing.T) {
 		if mutating && !allowlist[tool.Name] {
 			t.Errorf("%s mutates but is not in WriteToolNames()", tool.Name)
 		}
+	}
+}
+
+// GET /v1/stocks answers with a bare JSON array and puts the keyset cursor in an
+// X-Next-Cursor header. Decoding it as {items, nextCursor} compiles fine and
+// yields nothing at runtime, so the array shape is pinned here.
+func TestListPositionsDecodesBareArray(t *testing.T) {
+	backend, _ := fakeBackend(t)
+	cs := connect(t, map[string]bool{"holdings:read": true}, backend.URL, nil)
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "list_positions", Arguments: map[string]any{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("list_positions failed: %s", mustJSON(t, res.Content))
+	}
+	body := mustJSON(t, res.Content)
+	if !strings.Contains(body, "AVGO") {
+		t.Errorf("expected the position to survive decoding, got: %s", body)
 	}
 }

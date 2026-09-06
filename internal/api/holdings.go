@@ -25,11 +25,6 @@ type Stock struct {
 	CreatedAt       string  `json:"createdAt,omitempty"`
 }
 
-type StockListPage struct {
-	Items      []Stock `json:"items"`
-	NextCursor *string `json:"nextCursor,omitempty"`
-}
-
 type StockRequest struct {
 	Symbol          string  `json:"symbol"`
 	Shares          float64 `json:"shares"`
@@ -46,7 +41,10 @@ type SellStockRequest struct {
 	SellDate     string  `json:"sellDate"`
 }
 
-func (c *Client) ListStocks(ctx context.Context, portfolioListID string, limit int) (*StockListPage, error) {
+// ListStocks returns a bare array. The backend puts the keyset cursor in the
+// X-Next-Cursor response header rather than in the body, so paging past the
+// first page needs that header rather than a field on the payload.
+func (c *Client) ListStocks(ctx context.Context, portfolioListID string, limit int) ([]Stock, error) {
 	query := url.Values{}
 	if portfolioListID != "" {
 		query.Set("portfolioListId", portfolioListID)
@@ -54,11 +52,11 @@ func (c *Client) ListStocks(ctx context.Context, portfolioListID string, limit i
 	if limit > 0 {
 		query.Set("limit", strconv.Itoa(limit))
 	}
-	var out StockListPage
+	out := []Stock{}
 	if err := c.do(ctx, http.MethodGet, "/v1/stocks", query, nil, &out); err != nil {
 		return nil, err
 	}
-	return &out, nil
+	return out, nil
 }
 
 func (c *Client) CreateStock(ctx context.Context, body StockRequest, idempotencyKey string) (*Stock, error) {

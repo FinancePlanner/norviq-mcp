@@ -33,11 +33,11 @@ func registerHoldings(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			Description: "List the user's stock positions.",
 			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 		}, func(ctx context.Context, _ *mcp.CallToolRequest, args listArgs) (*mcp.CallToolResult, any, error) {
-			page, err := client.ListStocks(ctx, args.PortfolioListID, args.Limit)
+			positions, err := client.ListStocks(ctx, args.PortfolioListID, args.Limit)
 			if err != nil {
 				return fail(err), nil, nil
 			}
-			out, _ := json.MarshalIndent(page, "", "  ")
+			out, _ := json.MarshalIndent(positions, "", "  ")
 			return textResult(string(out), false), nil, nil
 		})
 	}
