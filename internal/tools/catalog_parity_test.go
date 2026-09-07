@@ -11,7 +11,8 @@ import (
 )
 
 // The backend owns one ActionCatalog shared by the HTTP controllers and the
-// in-process assistant (and therefore Telegram). This Go service hand-writes its
+// in-process assistant — which since 2026-09 genuinely includes Telegram and the
+// persistent assistant, rather than only claiming to. This Go service hand-writes its
 // tool structs against the same API, so nothing structural stopped the two
 // diverging — that is how a tool decoding GET /v1/stocks as {items,nextCursor}
 // shipped while the endpoint returns a bare array.
@@ -62,6 +63,9 @@ var mcpToCatalog = map[string]string{
 	"add_expense":            "add_expense",
 	"update_expense":         "update_expense",
 	"delete_expense":         "delete_expense",
+	"add_goal":               "add_goal",
+	"update_goal":            "update_goal",
+	"delete_goal":            "delete_goal",
 }
 
 // mcpOnly lists write tools that deliberately have no catalog counterpart yet.
@@ -77,9 +81,6 @@ var mcpOnly = map[string]string{
 	"add_research_note":        "research notes are not in the catalog yet",
 	"delete_research_note":     "research notes are not in the catalog yet",
 	"import_expenses_csv":      "bulk import is an MCP-shaped operation",
-	"add_goal":                 "goals predate the catalog",
-	"update_goal":              "goals predate the catalog",
-	"delete_goal":              "goals predate the catalog",
 	"create_budget_snapshot":   "budget predates the catalog",
 	"update_budget_snapshot":   "budget predates the catalog",
 	"delete_budget_snapshot":   "budget predates the catalog",

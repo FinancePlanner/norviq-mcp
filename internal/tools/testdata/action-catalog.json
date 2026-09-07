@@ -18,6 +18,10 @@
     { "name": "delete_trade",           "destructive": true  },
     { "name": "add_position",           "destructive": false },
     { "name": "sell_position",          "destructive": true  },
-    { "name": "delete_position",        "destructive": true  }
+    { "name": "delete_position",        "destructive": true  },
+    { "name": "list_goals",             "destructive": false },
+    { "name": "add_goal",               "destructive": false },
+    { "name": "update_goal",            "destructive": false },
+    { "name": "delete_goal",            "destructive": true  }
   ]
 }
