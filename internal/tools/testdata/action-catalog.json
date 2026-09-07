@@ -1,0 +1,23 @@
+{
+  "_comment": [
+    "Snapshot of the backend's ActionCatalog, served by GET /v1/actions/catalog.",
+    "Refresh with: make catalog-snapshot (needs a reachable backend and a token).",
+    "This exists because the Go tool structs are hand-written: a tool decoding",
+    "GET /v1/stocks as {items,nextCursor} shipped once while the endpoint returns",
+    "a bare array, because nothing compared the two sides."
+  ],
+  "actions": [
+    { "name": "add_expense",            "destructive": false },
+    { "name": "update_expense",         "destructive": false },
+    { "name": "delete_expense",         "destructive": true  },
+    { "name": "list_watchlist",         "destructive": false },
+    { "name": "upsert_watchlist_item",  "destructive": false },
+    { "name": "remove_watchlist_item",  "destructive": true  },
+    { "name": "list_transactions",      "destructive": false },
+    { "name": "record_trade",           "destructive": false },
+    { "name": "delete_trade",           "destructive": true  },
+    { "name": "add_position",           "destructive": false },
+    { "name": "sell_position",          "destructive": true  },
+    { "name": "delete_position",        "destructive": true  }
+  ]
+}
