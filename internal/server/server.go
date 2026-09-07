@@ -97,9 +97,7 @@ func New(cfg Config) http.Handler {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"resource":              cfg.PublicURL,
 			"authorization_servers": []string{cfg.advertisedAuthorizationServer()},
-			"scopes_supported": []string{
-				"expenses:read", "expenses:write", "reports:read", "market:read", "insights:read", "tax:read",
-			},
+			"scopes_supported":      supportedScopes,
 		})
 	})
 
@@ -181,3 +179,29 @@ func unauthorized(w http.ResponseWriter, challenge, msg string) {
 }
 
 var _ = context.Background
+
+// supportedScopes is what this resource advertises per RFC 9728. It must stay in
+// step with the scopes the backend actually enforces: a scope omitted here is one
+// a client will never think to ask for. portfolio:read was previously missing
+// while market.go already gated on it.
+var supportedScopes = []string{
+	"watchlist:read", "watchlist:write",
+	"holdings:read", "holdings:write",
+	"transactions:read", "transactions:write",
+	"portfolio:read", "portfolio:write",
+	"targets:read", "targets:write",
+	"crypto:read", "crypto:write",
+	"research:read", "research:write",
+	"expenses:read", "expenses:write",
+	"budget:read", "budget:write",
+	"goals:read", "goals:write",
+	"planning:read", "planning:write",
+	"tax:read", "tax:write",
+	"notifications:read", "notifications:write",
+	"settings:read", "settings:write",
+	"integrations:read", "integrations:write",
+	"billing:read", "billing:write",
+	"export:read", "export:write",
+	"assistant:read", "assistant:write",
+	"market:read", "insights:read", "reports:read",
+}
