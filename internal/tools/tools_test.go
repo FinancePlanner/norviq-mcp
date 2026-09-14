@@ -47,6 +47,12 @@ func fakeBackend(t *testing.T) (*httptest.Server, *[]string) {
 			}
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"id":"e2","title":"Lunch","amount":12,"pillar":"lifestyle","occurredOn":"2026-07-03"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/planning/projection":
+			_, _ = w.Write([]byte(`{"result":{"endingValueNominal":241711,"endingValueReal":162700,"totalContributed":106000,"totalGrowth":135711},"sensitivity":[{"annualReturnRate":0.05,"endingValueNominal":196000}],"assumptionNotes":["Projections, not advice."]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/planning/retirement":
+			_, _ = w.Write([]byte(`{"need":{"annualSpendingAtRetirement":49926,"nestEggAtWithdrawalRate":840000,"runwayYears":21,"shortfallAge":81},"lever":{"gap":230000,"additionalMonthlyContribution":185,"delayYears":3},"projectedPortfolioAtRetirement":610000,"readinessProbability":0.62,"assumptionNotes":["Projections, not advice."]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/planning/prefill":
+			_, _ = w.Write([]byte(`{"currency":"EUR","portfolioValue":52000,"monthlyCostOfLife":2800,"monthlyByPillar":{"fundamentals":1800},"monthlyHousing":900,"hasBudget":true,"hasPortfolio":true}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/reports/overview":
 			_, _ = w.Write([]byte(`{"total":100}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/tax/dashboard":
@@ -751,5 +757,133 @@ func TestListPositionsDecodesBareArray(t *testing.T) {
 	body := mustJSON(t, res.Content)
 	if !strings.Contains(body, "AVGO") {
 		t.Errorf("expected the position to survive decoding, got: %s", body)
+	}
+}
+
+func TestPlanningReadScopeExposesTheCalculators(t *testing.T) {
+	backend, _ := fakeBackend(t)
+	cs := connect(t, map[string]bool{"planning:read": true}, backend.URL, nil)
+
+	listed, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, tool := range listed.Tools {
+		names[tool.Name] = true
+	}
+	if !names["project_investment_growth"] || !names["check_retirement_readiness"] {
+		t.Fatalf("planning:read did not expose both calculators: %v", names)
+	}
+}
+
+func TestPlanningToolsAreHiddenWithoutTheScope(t *testing.T) {
+	backend, _ := fakeBackend(t)
+	cs := connect(t, map[string]bool{"reports:read": true}, backend.URL, nil)
+
+	listed, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range listed.Tools {
+		if tool.Name == "project_investment_growth" || tool.Name == "check_retirement_readiness" {
+			t.Fatalf("planning tool %q exposed without planning:read", tool.Name)
+		}
+	}
+}
+
+// A percentage as a person says it (7) must reach the API as a fraction (0.07).
+// Getting this wrong would project a 700% return and nobody would notice until
+// the number was absurd.
+func TestProjectGrowthConvertsPercentages(t *testing.T) {
+	backend, seen := fakeBackend(t)
+	cs := connect(t, map[string]bool{"planning:read": true}, backend.URL, nil)
+
+	args, _ := json.Marshal(map[string]any{
+		"initialAmount": 10000, "monthlyContribution": 400, "years": 20, "annualReturnPercent": 7,
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "project_investment_growth", Arguments: json.RawMessage(args),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("project_investment_growth errored: %+v", res.Content)
+	}
+	content, _ := json.Marshal(res.Content)
+	if !strings.Contains(string(content), "241711") {
+		t.Fatalf("projection result was not returned: %s", content)
+	}
+	if !strings.Contains(string(content), "Projections, not advice.") {
+		t.Fatalf("assumptions were dropped on the way out: %s", content)
+	}
+	if len(*seen) == 0 || (*seen)[len(*seen)-1] != "POST /v1/planning/projection" {
+		t.Fatalf("backend did not receive the projection request; saw %v", *seen)
+	}
+}
+
+func TestProjectGrowthRejectsAnImpossibleHorizon(t *testing.T) {
+	backend, _ := fakeBackend(t)
+	cs := connect(t, map[string]bool{"planning:read": true}, backend.URL, nil)
+
+	args, _ := json.Marshal(map[string]any{"years": 0})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "project_investment_growth", Arguments: json.RawMessage(args),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError {
+		t.Fatal("expected a zero-year projection to be refused")
+	}
+}
+
+// The reason to ask Norviq rather than any calculator on the internet: it knows
+// what the user's life costs and what they already hold.
+func TestRetirementReadinessFallsBackToTheUsersOwnNumbers(t *testing.T) {
+	backend, seen := fakeBackend(t)
+	cs := connect(t, map[string]bool{"planning:read": true}, backend.URL, nil)
+
+	args, _ := json.Marshal(map[string]any{"currentAge": 40, "retirementAge": 60})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "check_retirement_readiness", Arguments: json.RawMessage(args),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("check_retirement_readiness errored: %+v", res.Content)
+	}
+
+	var sawPrefill bool
+	for _, call := range *seen {
+		if call == "GET /v1/planning/prefill" {
+			sawPrefill = true
+		}
+	}
+	if !sawPrefill {
+		t.Fatalf("cost of life and portfolio were not read from the user's data; saw %v", *seen)
+	}
+
+	content, _ := json.Marshal(res.Content)
+	if !strings.Contains(string(content), "additionalMonthlyContribution") {
+		t.Fatalf("the lever was not returned: %s", content)
+	}
+}
+
+func TestRetirementReadinessRejectsAnImpossibleTimeline(t *testing.T) {
+	backend, _ := fakeBackend(t)
+	cs := connect(t, map[string]bool{"planning:read": true}, backend.URL, nil)
+
+	args, _ := json.Marshal(map[string]any{"currentAge": 60, "retirementAge": 50})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "check_retirement_readiness", Arguments: json.RawMessage(args),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError {
+		t.Fatal("expected retiring before today's age to be refused")
 	}
 }
