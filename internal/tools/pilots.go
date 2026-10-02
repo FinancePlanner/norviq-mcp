@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/FinancePlanner/norviq-mcp/internal/api"
 	"github.com/FinancePlanner/norviq-mcp/internal/auth"
+	"github.com/FinancePlanner/norviq-mcp/internal/errmap"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -64,6 +66,23 @@ func normalizeSlug(raw string) string {
 	return strings.Join(strings.Fields(strings.ToLower(raw)), "-")
 }
 
+// uuidPattern matches a follow id. The backend parses followId as a UUID and
+// answers "Follow not found." for anything else. Catching that here lets the
+// tool say what was wrong (usually a pilot slug in the wrong tool) without a
+// round trip.
+var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// pilotFollowView is get_pilot_follow's answer: the follow and a bounded slice
+// of its newest events. events_error is set, rather than failing the whole call,
+// when the follow loaded but its events did not.
+type pilotFollowView struct {
+	Follow       api.PilotFollow        `json:"follow"`
+	RecentEvents []api.PilotFollowEvent `json:"recent_events"`
+	EventsShown  int                    `json:"events_shown"`
+	EventsTotal  int                    `json:"events_total"`
+	EventsError  string                 `json:"events_error,omitempty"`
+}
+
 func registerPilots(s *mcp.Server, client *api.Client, p *auth.Principal) {
 	// PilotController guards every route with portfolio:read alone. Unlike
 	// get_portfolio_summary, legacy market:read is not accepted there, so it must
@@ -111,5 +130,63 @@ func registerPilots(s *mcp.Server, client *api.Client, p *auth.Principal) {
 		out, _ := json.MarshalIndent(detail, "", "  ")
 		// The backend's lag note leads so it is the first thing the model reads.
 		return textResult(detail.LagNote+"\n\n"+string(out), false), nil, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "list_pilot_follows",
+		Description: "List the user's pilot follows, newest first: which pilot, whether it mirrors " +
+			"into a hypothetical portfolio or a watchlist feed, status (active or paused), starting " +
+			"capital and currency, and the last applied book version. Use an id with " +
+			"get_pilot_follow." + pilotNotice,
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+		follows, err := client.ListPilotFollows(ctx)
+		if err != nil {
+			return pilotListFail(err), nil, nil
+		}
+		out, _ := json.MarshalIndent(follows, "", "  ")
+		return textResult(string(out), false), nil, nil
+	})
+
+	type getFollowArgs struct {
+		FollowID   string `json:"follow_id" jsonschema:"follow id (a UUID) from list_pilot_follows; not a pilot slug"`
+		EventLimit int    `json:"event_limit,omitempty" jsonschema:"how many of the newest events to include, 1-100; defaults to 20"`
+	}
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "get_pilot_follow",
+		Description: "Get one of the user's pilot follows by id (from list_pilot_follows) with its " +
+			"newest events: simulated buys and sells in the hypothetical portfolio, watchlist " +
+			"symbols added or marked exited, and trades skipped for missing prices or size limits." +
+			pilotNotice,
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args getFollowArgs) (*mcp.CallToolResult, any, error) {
+		id := strings.TrimSpace(args.FollowID)
+		if !uuidPattern.MatchString(id) {
+			return textResult(fmt.Sprintf(
+				"%q is not a follow id. Follow ids are UUIDs; call list_pilot_follows to find one. "+
+					"To look up a pilot by slug, use get_pilot instead.", args.FollowID,
+			), true), nil, nil
+		}
+		follow, err := client.GetPilotFollow(ctx, id)
+		if err != nil {
+			missing := fmt.Sprintf("No pilot follow with id %s on this account. Call list_pilot_follows to see the user's follows.", id)
+			return pilotItemFail(ctx, client, err, missing), nil, nil
+		}
+
+		view := pilotFollowView{Follow: *follow, RecentEvents: []api.PilotFollowEvent{}}
+		events, eventsErr := client.ListPilotFollowEvents(ctx, id)
+		if eventsErr != nil {
+			view.EventsError = "Recent events could not be loaded: " + errmap.Friendly(eventsErr)
+		} else {
+			limit := clamp(args.EventLimit, 20, 1, 100)
+			view.EventsTotal = len(events)
+			if len(events) > limit {
+				events = events[:limit]
+			}
+			view.RecentEvents = events
+			view.EventsShown = len(events)
+		}
+		out, _ := json.MarshalIndent(view, "", "  ")
+		return textResult(string(out), false), nil, nil
 	})
 }

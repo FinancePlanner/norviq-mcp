@@ -2,12 +2,14 @@ package tools_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/FinancePlanner/norviq-mcp/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -301,5 +303,165 @@ func TestGetPilotRejectsAnEmptySlug(t *testing.T) {
 	}
 	if len(*seen) != 0 {
 		t.Errorf("an empty slug must not reach the backend, saw %v", *seen)
+	}
+}
+
+func TestListPilotFollowsReturnsTheUsersFollows(t *testing.T) {
+	cs, seen := pilotSession(t, true, pilotScopes)
+
+	text, isErr := callPilotTool(t, cs, "list_pilot_follows", nil)
+	if isErr {
+		t.Fatalf("list_pilot_follows failed: %s", text)
+	}
+	for _, want := range []string{followID, `"targetKind": "portfolio"`, `"status": "active"`, "nancy-pelosi"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("list_pilot_follows output missing %s: %s", want, text)
+		}
+	}
+	if !sawRequest(seen, "GET /v1/pilot-follows") {
+		t.Errorf("expected GET /v1/pilot-follows, saw %v", *seen)
+	}
+}
+
+func TestListPilotFollowsSaysWhenTheFeatureIsOff(t *testing.T) {
+	cs, _ := pilotSession(t, false, pilotScopes)
+
+	text, isErr := callPilotTool(t, cs, "list_pilot_follows", nil)
+	if !isErr || !strings.HasPrefix(text, "Pilot follows are not enabled") {
+		t.Errorf("expected the not-enabled message, got (%v) %s", isErr, text)
+	}
+}
+
+type followViewForTest struct {
+	Follow struct {
+		ID string `json:"id"`
+	} `json:"follow"`
+	RecentEvents []struct {
+		Symbol string `json:"symbol"`
+	} `json:"recent_events"`
+	EventsShown int    `json:"events_shown"`
+	EventsTotal int    `json:"events_total"`
+	EventsError string `json:"events_error"`
+}
+
+func decodeFollowView(t *testing.T, text string) followViewForTest {
+	t.Helper()
+	var view followViewForTest
+	if err := json.Unmarshal([]byte(text), &view); err != nil {
+		t.Fatalf("get_pilot_follow did not return JSON: %v\n%s", err, text)
+	}
+	return view
+}
+
+func TestGetPilotFollowShowsTheNewestEventsFirstAndCapsThem(t *testing.T) {
+	cs, _ := pilotSession(t, true, pilotScopes)
+
+	// Default: the 20 newest of 30, in the backend's newest-first order.
+	text, isErr := callPilotTool(t, cs, "get_pilot_follow", map[string]any{"follow_id": followID})
+	if isErr {
+		t.Fatalf("get_pilot_follow failed: %s", text)
+	}
+	view := decodeFollowView(t, text)
+	if view.Follow.ID != followID {
+		t.Errorf("follow id = %q, want %q", view.Follow.ID, followID)
+	}
+	if view.EventsShown != 20 || len(view.RecentEvents) != 20 || view.EventsTotal != 30 {
+		t.Errorf("expected 20 of 30 events, got shown=%d len=%d total=%d",
+			view.EventsShown, len(view.RecentEvents), view.EventsTotal)
+	}
+	if len(view.RecentEvents) > 0 && view.RecentEvents[0].Symbol != "SYM00" {
+		t.Errorf("expected the newest event first, got %s", view.RecentEvents[0].Symbol)
+	}
+
+	// An explicit limit is honoured.
+	text, _ = callPilotTool(t, cs, "get_pilot_follow", map[string]any{"follow_id": followID, "event_limit": 5})
+	if view = decodeFollowView(t, text); len(view.RecentEvents) != 5 {
+		t.Errorf("event_limit 5 returned %d events", len(view.RecentEvents))
+	}
+
+	// An oversized limit is capped at 100, so all 30 come back rather than an error.
+	text, isErr = callPilotTool(t, cs, "get_pilot_follow", map[string]any{"follow_id": followID, "event_limit": 1000})
+	if view = decodeFollowView(t, text); isErr || len(view.RecentEvents) != 30 {
+		t.Errorf("event_limit 1000 returned (%v) %d events", isErr, len(view.RecentEvents))
+	}
+}
+
+func TestGetPilotFollowStillAnswersWhenEventsFail(t *testing.T) {
+	cs, _ := pilotSession(t, true, pilotScopes)
+
+	text, isErr := callPilotTool(t, cs, "get_pilot_follow", map[string]any{"follow_id": followIDNoFeed})
+	if isErr {
+		t.Fatalf("a failed events call must not hide the follow: %s", text)
+	}
+	view := decodeFollowView(t, text)
+	if view.Follow.ID != followIDNoFeed {
+		t.Errorf("follow id = %q, want %q", view.Follow.ID, followIDNoFeed)
+	}
+	if view.EventsError == "" || len(view.RecentEvents) != 0 {
+		t.Errorf("expected an events_error and no events, got error=%q len=%d", view.EventsError, len(view.RecentEvents))
+	}
+}
+
+func TestGetPilotFollowRejectsANonUUID(t *testing.T) {
+	cs, seen := pilotSession(t, true, pilotScopes)
+
+	text, isErr := callPilotTool(t, cs, "get_pilot_follow", map[string]any{"follow_id": "nancy-pelosi"})
+	if !isErr || !strings.Contains(text, "list_pilot_follows") || !strings.Contains(text, "get_pilot") {
+		t.Errorf("expected a pointer to list_pilot_follows and get_pilot, got (%v) %s", isErr, text)
+	}
+	if len(*seen) != 0 {
+		t.Errorf("a non-UUID follow id must not reach the backend, saw %v", *seen)
+	}
+}
+
+func TestGetPilotFollowUnknownIDIsNotReportedAsDisabled(t *testing.T) {
+	cs, _ := pilotSession(t, true, pilotScopes)
+
+	const unknown = "11111111-2222-4333-8444-555555555555"
+	text, isErr := callPilotTool(t, cs, "get_pilot_follow", map[string]any{"follow_id": unknown})
+	if !isErr {
+		t.Error("expected an unknown follow to be an error")
+	}
+	if strings.Contains(text, "not enabled") || !strings.Contains(text, "No pilot follow with id "+unknown) {
+		t.Errorf("expected a not-found message for the follow, got: %s", text)
+	}
+}
+
+func TestGetPilotFollowSaysWhenTheFeatureIsOff(t *testing.T) {
+	cs, _ := pilotSession(t, false, pilotScopes)
+
+	text, isErr := callPilotTool(t, cs, "get_pilot_follow", map[string]any{"follow_id": followID})
+	if !isErr || !strings.HasPrefix(text, "Pilot follows are not enabled") {
+		t.Errorf("expected the not-enabled message, got (%v) %s", isErr, text)
+	}
+}
+
+func TestPortfolioReadExposesExactlyTheFourPilotTools(t *testing.T) {
+	cs, _ := pilotSession(t, true, pilotScopes)
+
+	writes := map[string]bool{}
+	for _, name := range tools.WriteToolNames() {
+		writes[name] = true
+	}
+	got := map[string]bool{}
+	for _, tool := range listPilotTools(t, cs) {
+		if !strings.Contains(tool.Name, "pilot") {
+			continue
+		}
+		got[tool.Name] = true
+		if writes[tool.Name] {
+			t.Errorf("%s is read-only by scope decision but is listed as a write tool", tool.Name)
+		}
+		if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
+			t.Errorf("%s must carry ReadOnlyHint", tool.Name)
+		}
+	}
+	for _, want := range []string{"list_pilots", "get_pilot", "list_pilot_follows", "get_pilot_follow"} {
+		if !got[want] {
+			t.Errorf("missing pilot tool %s", want)
+		}
+	}
+	if len(got) != 4 {
+		t.Errorf("expected exactly 4 pilot tools, got %v", got)
 	}
 }
