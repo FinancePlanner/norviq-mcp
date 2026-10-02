@@ -887,3 +887,61 @@ func TestRetirementReadinessRejectsAnImpossibleTimeline(t *testing.T) {
 		t.Fatal("expected retiring before today's age to be refused")
 	}
 }
+
+func TestWatchlistAcceptsExitedStatus(t *testing.T) {
+	// A pilot follow's watchlist feed sets "exited" when the pilot sells. The user
+	// must be able to set it as well. Otherwise validateStatus rejects a value the
+	// backend accepts.
+	backend, seen := fakeBackend(t)
+	cs := connect(t, map[string]bool{"watchlist:write": true}, backend.URL, acceptElicit)
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "upsert_watchlist_items",
+		Arguments: map[string]any{
+			"items": []map[string]any{{"symbol": "NVDA", "status": "exited"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("exited was rejected: %s", mustJSON(t, res.Content))
+	}
+	var posted bool
+	for _, entry := range *seen {
+		if entry == "POST /v1/watchlist" {
+			posted = true
+		}
+	}
+	if !posted {
+		t.Error("expected the exited row to reach the backend")
+	}
+}
+
+func TestWatchlistSchemasListEveryStatus(t *testing.T) {
+	// The jsonschema tags spell the status list out by hand, so they can drift from
+	// api.WatchlistStatuses. A model only offers the values the schema shows it.
+	backend, _ := fakeBackend(t)
+	cs := connect(t, map[string]bool{"watchlist:write": true}, backend.URL, acceptElicit)
+
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, tool := range res.Tools {
+		if tool.Name != "upsert_watchlist_items" && tool.Name != "update_watchlist_item" {
+			continue
+		}
+		checked++
+		schema := mustJSON(t, tool.InputSchema)
+		for _, status := range api.WatchlistStatuses {
+			if !strings.Contains(schema, status) {
+				t.Errorf("%s input schema does not list status %q", tool.Name, status)
+			}
+		}
+	}
+	if checked != 2 {
+		t.Fatalf("expected to check both watchlist write tools, checked %d", checked)
+	}
+}

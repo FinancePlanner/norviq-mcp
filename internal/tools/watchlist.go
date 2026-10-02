@@ -20,7 +20,7 @@ import (
 // confirmation that shows the whole set before anything is written.
 type watchlistRow struct {
 	Symbol string `json:"symbol" jsonschema:"ticker symbol, e.g. AVGO"`
-	Status string `json:"status,omitempty" jsonschema:"one of: active, researching, waiting, ready, archived"`
+	Status string `json:"status,omitempty" jsonschema:"one of: active, researching, waiting, ready, archived, exited"`
 	Note   string `json:"note,omitempty" jsonschema:"free-text note, e.g. a buy zone"`
 	ListID string `json:"list_id,omitempty" jsonschema:"optional watchlist list id; defaults to the user's default list"`
 }
@@ -154,7 +154,7 @@ func registerWatchlist(s *mcp.Server, client *api.Client, p *auth.Principal) {
 
 	type updateArgs struct {
 		ID     string `json:"id" jsonschema:"watchlist entry id"`
-		Status string `json:"status,omitempty" jsonschema:"one of: active, researching, waiting, ready, archived"`
+		Status string `json:"status,omitempty" jsonschema:"one of: active, researching, waiting, ready, archived, exited"`
 		Note   string `json:"note,omitempty" jsonschema:"replacement note"`
 		ListID string `json:"list_id,omitempty" jsonschema:"move the entry to this watchlist list"`
 	}

@@ -7,9 +7,11 @@ import (
 )
 
 // WatchlistStatus values accepted by the backend. Mirrors WatchlistStatus in
-// norviq-shared; an unknown value is coerced to "active" server-side, which
-// silently loses the caller's intent, so the tool layer validates up front.
-var WatchlistStatuses = []string{"active", "researching", "waiting", "ready", "archived"}
+// norviq-shared (5.15.0 added "exited", which a pilot follow's watchlist feed
+// sets when the pilot sells). An unknown value is coerced to "active"
+// server-side, which silently loses the caller's intent, so the tool layer
+// validates up front.
+var WatchlistStatuses = []string{"active", "researching", "waiting", "ready", "archived", "exited"}
 
 type WatchlistItem struct {
 	ID              string `json:"id"`
