@@ -465,3 +465,29 @@ func TestPortfolioReadExposesExactlyTheFourPilotTools(t *testing.T) {
 		t.Errorf("expected exactly 4 pilot tools, got %v", got)
 	}
 }
+
+func TestGetPilotSurfacesAFailedFlagProbe(t *testing.T) {
+	// The item route 404s, then the GET /v1/pilots probe fails with a 500. Nothing
+	// is known about the flag or the item, so the server error must come through
+	// instead of "No pilot with slug".
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v1/pilots" {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":true,"code":"internal_server_error","reason":"Internal Server Error"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":true,"code":"not_found","reason":"Pilot not found."}`))
+	}))
+	t.Cleanup(srv.Close)
+	cs := connect(t, pilotScopes, srv.URL, nil)
+
+	text, isErr := callPilotTool(t, cs, "get_pilot", map[string]any{"slug": "nancy-pelosi"})
+	if !isErr {
+		t.Error("expected an error")
+	}
+	if strings.Contains(text, "No pilot") || strings.Contains(text, "not enabled") {
+		t.Errorf("a failed probe must not read as not-found or disabled: %s", text)
+	}
+}

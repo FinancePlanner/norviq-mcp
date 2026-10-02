@@ -54,10 +54,17 @@ func pilotItemFail(ctx context.Context, client *api.Client, err error, missing s
 	if !isNotFound(err) {
 		return fail(err)
 	}
-	if _, probeErr := client.ListPilots(ctx); isNotFound(probeErr) {
+	_, probeErr := client.ListPilots(ctx)
+	switch {
+	case probeErr == nil:
+		return textResult(missing, true)
+	case isNotFound(probeErr):
 		return textResult(pilotsDisabledMessage, true)
+	default:
+		// The probe itself failed (5xx, auth, network), so nothing is known about
+		// the flag or the item. Report that failure, not a guess.
+		return fail(probeErr)
 	}
-	return textResult(missing, true)
 }
 
 // normalizeSlug turns "Nancy Pelosi" or " Nancy-Pelosi " into "nancy-pelosi",
