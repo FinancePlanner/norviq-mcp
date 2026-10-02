@@ -228,3 +228,78 @@ func TestNoToolNamesTheThirdPartyBrand(t *testing.T) {
 		}
 	}
 }
+
+func TestGetPilotReturnsWeightsDisclosuresAndLag(t *testing.T) {
+	cs, seen := pilotSession(t, true, pilotScopes)
+
+	text, isErr := callPilotTool(t, cs, "get_pilot", map[string]any{"slug": "nancy-pelosi"})
+	if isErr {
+		t.Fatalf("get_pilot failed: %s", text)
+	}
+	// The lag note leads, so a model summarising the answer meets it first.
+	if !strings.HasPrefix(text, pilotLagNote) {
+		t.Errorf("expected the lag note first, got: %s", text)
+	}
+	for _, want := range []string{`"AVGO"`, `"weight": 0.58`, `"skippedPuts": 2`, `"instrument": "call"`} {
+		if !strings.Contains(text, want) {
+			t.Errorf("get_pilot output missing %s: %s", want, text)
+		}
+	}
+	if !sawRequest(seen, "GET /v1/pilots/nancy-pelosi") {
+		t.Errorf("expected GET /v1/pilots/nancy-pelosi, saw %v", *seen)
+	}
+}
+
+func TestGetPilotNormalizesTheSlug(t *testing.T) {
+	// Seed slugs are lowercase and hyphenated. A model often passes the display
+	// name or keeps its capitals.
+	for _, input := range []string{"Nancy Pelosi", " Nancy-Pelosi "} {
+		cs, seen := pilotSession(t, true, pilotScopes)
+		text, isErr := callPilotTool(t, cs, "get_pilot", map[string]any{"slug": input})
+		if isErr {
+			t.Errorf("get_pilot(%q) failed: %s", input, text)
+		}
+		if !sawRequest(seen, "GET /v1/pilots/nancy-pelosi") {
+			t.Errorf("get_pilot(%q) did not resolve to nancy-pelosi, saw %v", input, *seen)
+		}
+	}
+}
+
+func TestGetPilotUnknownSlugIsNotReportedAsDisabled(t *testing.T) {
+	cs, _ := pilotSession(t, true, pilotScopes)
+
+	text, isErr := callPilotTool(t, cs, "get_pilot", map[string]any{"slug": "no-such-pilot"})
+	if !isErr {
+		t.Error("expected an unknown slug to be an error")
+	}
+	if strings.Contains(text, "not enabled") {
+		t.Errorf("an unknown slug with the flag on must not read as disabled: %s", text)
+	}
+	if !strings.Contains(text, `No pilot with slug "no-such-pilot"`) || !strings.Contains(text, "list_pilots") {
+		t.Errorf("expected a pointer to list_pilots, got: %s", text)
+	}
+}
+
+func TestGetPilotSaysWhenTheFeatureIsOff(t *testing.T) {
+	cs, _ := pilotSession(t, false, pilotScopes)
+
+	text, isErr := callPilotTool(t, cs, "get_pilot", map[string]any{"slug": "nancy-pelosi"})
+	if !isErr {
+		t.Error("expected the flag-off answer to be flagged as an error")
+	}
+	if !strings.HasPrefix(text, "Pilot follows are not enabled") {
+		t.Errorf("expected the not-enabled message, got: %s", text)
+	}
+}
+
+func TestGetPilotRejectsAnEmptySlug(t *testing.T) {
+	cs, seen := pilotSession(t, true, pilotScopes)
+
+	text, isErr := callPilotTool(t, cs, "get_pilot", map[string]any{"slug": "   "})
+	if !isErr || !strings.Contains(text, "slug is required") {
+		t.Errorf("expected a slug-required error, got (%v) %s", isErr, text)
+	}
+	if len(*seen) != 0 {
+		t.Errorf("an empty slug must not reach the backend, saw %v", *seen)
+	}
+}

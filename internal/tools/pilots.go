@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/FinancePlanner/norviq-mcp/internal/api"
 	"github.com/FinancePlanner/norviq-mcp/internal/auth"
@@ -42,6 +44,26 @@ func pilotListFail(err error) *mcp.CallToolResult {
 	return fail(err)
 }
 
+// pilotItemFail maps an error from a single-item pilot route. The backend
+// answers 404 both for an unknown pilot or follow and for the feature flag being
+// off, and the body does not reliably tell them apart. GET /v1/pilots looks up
+// no item, so it 404s only when the flag is off; one probe settles it.
+func pilotItemFail(ctx context.Context, client *api.Client, err error, missing string) *mcp.CallToolResult {
+	if !isNotFound(err) {
+		return fail(err)
+	}
+	if _, probeErr := client.ListPilots(ctx); isNotFound(probeErr) {
+		return textResult(pilotsDisabledMessage, true)
+	}
+	return textResult(missing, true)
+}
+
+// normalizeSlug turns "Nancy Pelosi" or " Nancy-Pelosi " into "nancy-pelosi",
+// the form the seed slugs use.
+func normalizeSlug(raw string) string {
+	return strings.Join(strings.Fields(strings.ToLower(raw)), "-")
+}
+
 func registerPilots(s *mcp.Server, client *api.Client, p *auth.Principal) {
 	// PilotController guards every route with portfolio:read alone. Unlike
 	// get_portfolio_summary, legacy market:read is not accepted there, so it must
@@ -65,5 +87,29 @@ func registerPilots(s *mcp.Server, client *api.Client, p *auth.Principal) {
 		}
 		out, _ := json.MarshalIndent(pilots, "", "  ")
 		return textResult(string(out), false), nil, nil
+	})
+
+	type getPilotArgs struct {
+		Slug string `json:"slug" jsonschema:"pilot slug from list_pilots, e.g. nancy-pelosi or berkshire-hathaway"`
+	}
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "get_pilot",
+		Description: "Get one pilot by slug (from list_pilots): the current book weights Norviq " +
+			"would mirror, the most recent disclosed trades or filings, how many put trades were " +
+			"skipped, and a plain-language note on the reporting lag." + pilotNotice,
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args getPilotArgs) (*mcp.CallToolResult, any, error) {
+		slug := normalizeSlug(args.Slug)
+		if slug == "" {
+			return textResult("slug is required, e.g. nancy-pelosi. Call list_pilots to see the available slugs.", true), nil, nil
+		}
+		detail, err := client.GetPilot(ctx, slug)
+		if err != nil {
+			missing := fmt.Sprintf("No pilot with slug %q. Call list_pilots to see the available slugs.", slug)
+			return pilotItemFail(ctx, client, err, missing), nil, nil
+		}
+		out, _ := json.MarshalIndent(detail, "", "  ")
+		// The backend's lag note leads so it is the first thing the model reads.
+		return textResult(detail.LagNote+"\n\n"+string(out), false), nil, nil
 	})
 }
