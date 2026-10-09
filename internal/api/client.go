@@ -43,6 +43,24 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("backend responded %d: %s", e.Status, e.Body)
 }
 
+// Code returns the "code" field of a JSON error body, such as
+// "upgrade_required" from the backend's BillingErrorMiddleware, or "" when the
+// body has none. A 403 means a missing scope as often as a Pro upgrade, so
+// callers tell them apart by this, not by the status.
+func (e *APIError) Code() string { return e.bodyField("code") }
+
+// Reason returns the "reason" field a Vapor Abort renders, or "".
+func (e *APIError) Reason() string { return e.bodyField("reason") }
+
+func (e *APIError) bodyField(name string) string {
+	var body map[string]any
+	if err := json.Unmarshal([]byte(e.Body), &body); err != nil {
+		return ""
+	}
+	value, _ := body[name].(string)
+	return value
+}
+
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, body, out any) error {
 	u := c.baseURL + path
 	if len(query) > 0 {
