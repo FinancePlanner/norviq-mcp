@@ -290,6 +290,15 @@ func TestGetTerminalPositionSaysWhenThereIsNone(t *testing.T) {
 	if !strings.Contains(text, terminalDisclaimerText) {
 		t.Errorf("no-row answer is missing the disclaimer:\n%s", text)
 	}
+	if strings.Contains(text, "set_terminal_scenario") || !strings.Contains(text, "Norviq app") {
+		t.Errorf("a read-only token must be pointed at the Norviq app, not at set_terminal_scenario:\n%s", text)
+	}
+
+	cs = connect(t, terminalWriteScopes, f.server(t).URL, nil)
+	text, _ = callPilotTool(t, cs, "get_terminal_position", map[string]any{"ticker": "tsla"})
+	if !strings.Contains(text, "set_terminal_scenario") || !strings.HasSuffix(text, terminalDisclaimerText) {
+		t.Errorf("a write token should be offered set_terminal_scenario and end with the disclaimer:\n%s", text)
+	}
 }
 
 func TestGetTerminalPositionReportsAnInvalidScenario(t *testing.T) {
@@ -384,6 +393,29 @@ func TestLookupShareFactsDoesNotCallAMissingScopeAnUpgrade(t *testing.T) {
 	if strings.Contains(text, "lookup_share_facts needs Norviq Pro") {
 		t.Errorf("a missing scope was reported as a Pro upgrade: %q", text)
 	}
+	assertPermissionMessage(t, text)
+}
+
+func assertPermissionMessage(t *testing.T, text string) {
+	t.Helper()
+	if !strings.Contains(text, "lacks the planning permission") || !strings.Contains(text, "planning:read") {
+		t.Errorf("want the permission message naming planning:read, got %q", text)
+	}
+	if strings.Contains(text, "Pro") || strings.Contains(text, "pgrade") {
+		t.Errorf("a missing scope must not mention Pro or upgrading: %q", text)
+	}
+}
+
+func TestGetTerminalPositionNamesAMissingScopeNotAnUpgrade(t *testing.T) {
+	f := newTerminalFake()
+	f.fail["GET /v1/terminal-positions"] = terminalFailure{http.StatusForbidden, `{"error":true,"reason":"insufficient_scope: 'planning:read' required"}`}
+	cs := connect(t, map[string]bool{"planning:read": true}, f.server(t).URL, nil)
+
+	text, isErr := callPilotTool(t, cs, "get_terminal_position", map[string]any{"ticker": "TSLA"})
+	if !isErr {
+		t.Fatal("a 403 must be an error")
+	}
+	assertPermissionMessage(t, text)
 }
 
 func TestLookupShareFactsSaysWhenTheAILookupCannotAnswer(t *testing.T) {

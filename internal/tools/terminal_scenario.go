@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/FinancePlanner/norviq-mcp/internal/api"
 	"github.com/FinancePlanner/norviq-mcp/internal/auth"
@@ -17,7 +18,7 @@ import (
 // for field. Every number is a pointer so "not given" and 0 differ:
 // sharesOwned 0 is a real answer (the user owns none, or sold out).
 type setTerminalScenarioArgs struct {
-	Ticker             string   `json:"ticker" jsonschema:"stock ticker, e.g. AMZN or BRK.B"`
+	Ticker             string   `json:"ticker" jsonschema:"exchange ticker, e.g. AMZN or BRK.B, not the company name; ask the user if unsure"`
 	TerminalShareCount *float64 `json:"terminalShareCount,omitempty" jsonschema:"the user's assumed share count at the terminal date, as a plain number (11 billion is 11000000000)"`
 	TerminalMarketCap  *float64 `json:"terminalMarketCap,omitempty" jsonschema:"the user's assumed market cap at the terminal date in the account currency, as a plain number (10 trillion is 10000000000000)"`
 	ValueWanted        *float64 `json:"valueWanted,omitempty" jsonschema:"what the user wants the position to be worth at the terminal date, in the account currency"`
@@ -227,7 +228,7 @@ func registerSetTerminalScenario(s *mcp.Server, client *api.Client, p *auth.Prin
 				ValueWanted:        *args.ValueWanted,
 				SharesOwned:        args.SharesOwned,
 				CurrentSharePrice:  args.CurrentSharePrice,
-			}, idempotencyKey(p.UserID, keyArgs))
+			}, terminalCreateKey(p.UserID, keyArgs, time.Now()))
 		}
 		if err != nil {
 			return terminalFail(err), nil, nil
@@ -237,4 +238,13 @@ func registerSetTerminalScenario(s *mcp.Server, client *api.Client, p *auth.Prin
 		}, "", "  ")
 		return textResult(string(body), false), nil, nil
 	})
+}
+
+// terminalCreateKey buckets the key by 5 minutes: the backend replays a cached
+// 2xx for 24h, so a deliberate re-create after a delete must not be replayed.
+func terminalCreateKey(userID string, args setTerminalScenarioArgs, now time.Time) string {
+	return idempotencyKey(userID, struct {
+		Args   setTerminalScenarioArgs
+		Bucket int64
+	}{args, now.Unix() / 300})
 }

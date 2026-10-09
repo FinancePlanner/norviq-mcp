@@ -75,6 +75,9 @@ func firstBySortOrder(rows []api.TerminalPosition) (api.TerminalPosition, bool) 
 // to retry values Norviq has already rejected.
 func terminalFail(err error) *mcp.CallToolResult {
 	var apiErr *api.APIError
+	if errors.As(err, &apiErr) && apiErr.Status == http.StatusForbidden && apiErr.Code() != "upgrade_required" {
+		return textResult(missingScopeMessage, true)
+	}
 	if errors.As(err, &apiErr) && apiErr.Status == http.StatusUnprocessableEntity {
 		reason := apiErr.Reason()
 		if reason == "" {
@@ -85,6 +88,12 @@ func terminalFail(err error) *mcp.CallToolResult {
 	}
 	return fail(err)
 }
+
+// missingScopeMessage answers a 403 that is not the Pro gate. errmap would
+// send the user to buy Pro for what is a connector permission problem.
+const missingScopeMessage = "Norviq refused this because your connection lacks the planning permission it needs. " +
+	"Reconnect the Norviq connector with planning:read (and planning:write to change scenarios). " +
+	"This is a permission problem, not a plan or billing one."
 
 // shareFactsUpgradeMessage answers the backend's Pro gate: a 403 whose body
 // code is "upgrade_required". The table itself is free, so the message says the
@@ -122,7 +131,7 @@ type shareFactsView struct {
 
 func registerShareFacts(s *mcp.Server, client *api.Client) {
 	type tickerArgs struct {
-		Ticker string `json:"ticker" jsonschema:"stock ticker, e.g. AMZN or BRK.B"`
+		Ticker string `json:"ticker" jsonschema:"exchange ticker, e.g. AMZN or BRK.B, not the company name; ask the user if unsure"`
 	}
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "lookup_share_facts",
@@ -195,7 +204,7 @@ func registerTerminalPositions(s *mcp.Server, client *api.Client, p *auth.Princi
 	})
 
 	type tickerArgs struct {
-		Ticker string `json:"ticker" jsonschema:"stock ticker, e.g. AMZN or BRK.B"`
+		Ticker string `json:"ticker" jsonschema:"exchange ticker, e.g. AMZN or BRK.B, not the company name; ask the user if unsure"`
 	}
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "get_terminal_position",
@@ -216,10 +225,11 @@ func registerTerminalPositions(s *mcp.Server, client *api.Client, p *auth.Princi
 		rows := rowsForTicker(list.Positions, ticker)
 		first, ok := firstBySortOrder(rows)
 		if !ok {
-			return textResult(fmt.Sprintf(
-				"No terminal scenario for %s yet. To add one, ask the user for the terminal market cap, terminal share count and value wanted, then call set_terminal_scenario. %s",
-				ticker, terminalDisclaimer,
-			), false), nil, nil
+			howToAdd := "The user can add one in the Norviq app."
+			if p.Scopes["planning:write"] {
+				howToAdd = "To add one, ask the user for the terminal market cap, terminal share count and value wanted, then call set_terminal_scenario."
+			}
+			return textResult(fmt.Sprintf("No terminal scenario for %s yet. %s %s", ticker, howToAdd, terminalDisclaimer), false), nil, nil
 		}
 		body, _ := json.MarshalIndent(terminalPositionView{
 			Currency: list.Currency, Position: first, ScenariosForTicker: len(rows), Disclaimer: terminalDisclaimer,
