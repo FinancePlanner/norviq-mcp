@@ -50,6 +50,8 @@ Tools are registered per session only when the token holds their scope.
 | `insights:read` | `get_insights` |
 | `tax:read` | `get_tax_dashboard`, `get_tax_loss_carryforwards` |
 | `goals:read` / `goals:write` | `list_goals`, goal CRUD |
+| `planning:read` | `project_investment_growth`, `check_retirement_readiness`, `get_terminal_positions`, `get_terminal_position`, `lookup_share_facts` (Pro) |
+| `planning:read` + `planning:write` | `set_terminal_scenario` |
 | `budget:read` / `budget:write` | budget snapshot and item CRUD |
 | `watchlist:read` | `list_watchlist`, `list_watchlist_lists` |
 | `watchlist:write` | `upsert_watchlist_items`, `update_watchlist_item`, `remove_watchlist_items`, `create_watchlist_list`, `delete_watchlist_list` |
@@ -73,6 +75,8 @@ never places an order: Norviq's broker integration is read-only by construction.
 `get_news` is the one news tool: `source=tracked` (the user's own feed for held/watched symbols, the default with no query), `source=market` (per-symbol headlines from Norviq's archive; a `query` is resolved to up to three symbols via symbol search), or `source=general` (broad market headlines). Every item is `{kind, symbol, title, source, published_at, url, summary}`, newest first, capped by `max_results` (1–50, default 10) and `lookback_days` (default 7). The body is wrapped in `<untrusted_data>` because headlines are third-party text.
 
 The pilot tools are read-only views of pilot follows: a user follows a curated politician or 13F fund, and Norviq mirrors that pilot's disclosed trades as **simulated** trades into a hypothetical portfolio, or as a watchlist feed that marks sold symbols `exited`. Disclosures arrive with a lag (up to 45 days for congress, 135 for 13F), and no real money is invested. Follows are created, paused and stopped in the app, not over MCP. While the backend's `PILOTS_ENABLED` flag is off, each pilot tool answers "Pilot follows are not enabled…" instead of a not-found error.
+
+The terminal position tools are planning math, not advice. Norviq computes every derived value on the server (`terminalSharePrice = terminalMarketCap / terminalShareCount`, `sharesNeeded = valueWanted × terminalShareCount / terminalMarketCap`, plus progress, the gap at terminal prices and the capital at today's price). The tools return those values and never compute them. `set_terminal_scenario` updates the first row for a ticker by sort order, or creates one when there is none, and always asks for confirmation showing the exact values. `lookup_share_facts` runs Norviq's own AI web lookup (Pro, rate-limited) for shares outstanding and today's price, and returns a sourced suggestion without saving it. Every answer carries the disclaimer "Terminal prices are your assumptions, not forecasts. Not financial advice."
 
 Write tools require the matching `:write` scope and use the pending-confirmation flow where implemented. Source of truth: `internal/tools/*.go`.
 
