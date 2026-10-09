@@ -64,7 +64,7 @@ func fakeBackend(t *testing.T) (*httptest.Server, *[]string) {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/portfolio/summary":
 			_, _ = w.Write([]byte(`{"totalMarketValue":10000}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/news/feed":
-			_, _ = w.Write([]byte(`[{"id":"n1","symbol":"AAPL","headline":"Apple launches thing","source":"Norviq","url":"https://example.com/aapl","summary":"A short summary","publishedAt":"2026-09-01T10:00:00Z","createdAt":"2026-09-01T10:00:00Z","updatedAt":"2026-09-01T10:00:00Z"}]`))
+			_, _ = w.Write([]byte(`[{"id":"n1","symbol":"AAPL","headline":"Apple launches thing","source":"Norviq","url":"https://example.com/aapl","summary":"A short summary","publishedAt":"` + today() + `T10:00:00Z","createdAt":"` + today() + `T10:00:00Z","updatedAt":"` + today() + `T10:00:00Z"}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/market/search":
 			_, _ = w.Write([]byte(`[{"symbol":"AAPL","name":"Apple Inc.","exchange":"NASDAQ","currency":"USD","conid":"123"},{"symbol":"AAPLX","name":"Apple Holdings","exchange":"NYSE","currency":"USD","conid":"456"}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/market/news":
@@ -713,6 +713,7 @@ func TestEveryMutatingToolIsInTheWriteAllowlist(t *testing.T) {
 		"research:read", "research:write", "expenses:read", "expenses:write",
 		"budget:read", "budget:write", "goals:read", "goals:write",
 		"reports:read", "market:read", "portfolio:read", "insights:read", "tax:read",
+		"planning:read", "planning:write",
 	} {
 		all[scope] = true
 	}
