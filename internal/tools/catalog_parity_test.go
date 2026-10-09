@@ -1,6 +1,7 @@
 package tools_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"sort"
@@ -66,6 +67,7 @@ var mcpToCatalog = map[string]string{
 	"add_goal":               "add_goal",
 	"update_goal":            "update_goal",
 	"delete_goal":            "delete_goal",
+	"set_terminal_scenario":  "set_terminal_scenario",
 }
 
 // mcpOnly lists write tools that deliberately have no catalog counterpart yet.
@@ -152,6 +154,46 @@ func TestDestructiveClassificationAgrees(t *testing.T) {
 				"%s maps to destructive catalog action %q but is not in WriteToolNames()",
 				mcpName, catalogName,
 			)
+		}
+	}
+}
+
+// terminalActions are the backend catalog actions for terminal position sizing
+// (norviq-backend docs/superpowers/plans/2026-10-09-terminal-contract.md). The
+// write-only checks above cannot see a missing read tool, and these four are
+// mirrored one-to-one by MCP tools of the same name, so both sides are pinned:
+// the snapshot must carry them and MCP must expose them.
+var terminalActions = []string{
+	"get_terminal_position",
+	"get_terminal_positions",
+	"lookup_share_facts",
+	"set_terminal_scenario",
+}
+
+func TestTerminalCatalogActionsHaveMCPTools(t *testing.T) {
+	snap := loadCatalog(t)
+	inCatalog := map[string]bool{}
+	for _, action := range snap.Actions {
+		inCatalog[action.Name] = true
+	}
+
+	backend, _ := fakeBackend(t)
+	cs := connect(t, map[string]bool{"planning:read": true, "planning:write": true}, backend.URL, acceptElicit)
+	listed, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exposed := map[string]bool{}
+	for _, tool := range listed.Tools {
+		exposed[tool.Name] = true
+	}
+
+	for _, name := range terminalActions {
+		if !inCatalog[name] {
+			t.Errorf("%s is not in testdata/action-catalog.json; run make catalog-snapshot against a backend that serves the terminal actions", name)
+		}
+		if !exposed[name] {
+			t.Errorf("%s is a contract action but MCP does not expose it", name)
 		}
 	}
 }

@@ -228,4 +228,10 @@ func registerTerminalPositions(s *mcp.Server, client *api.Client, p *auth.Princi
 	})
 
 	registerShareFacts(s, client)
+
+	// It reads the ticker's rows before writing, and the backend does not treat
+	// planning:write as implying planning:read, so it needs both.
+	if p.Scopes["planning:write"] {
+		registerSetTerminalScenario(s, client, p)
+	}
 }

@@ -713,6 +713,7 @@ func TestEveryMutatingToolIsInTheWriteAllowlist(t *testing.T) {
 		"research:read", "research:write", "expenses:read", "expenses:write",
 		"budget:read", "budget:write", "goals:read", "goals:write",
 		"reports:read", "market:read", "portfolio:read", "insights:read", "tax:read",
+		"planning:read", "planning:write",
 	} {
 		all[scope] = true
 	}
