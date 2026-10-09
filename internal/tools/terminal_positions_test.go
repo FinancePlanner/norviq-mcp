@@ -311,3 +311,110 @@ func TestGetTerminalPositionReportsAnInvalidScenario(t *testing.T) {
 		}
 	}
 }
+
+const (
+	shareFactsPath = "POST /v1/terminal-positions/ai/share-facts"
+
+	// BillingErrorMiddleware's body for a non-Pro user: HTTP 403, code upgrade_required.
+	upgradeRequiredJSON = `{"success":false,"code":"upgrade_required","error":"Upgrade required","feature":"terminal_position_ai","plan":"free","requiredPlan":"pro"}`
+)
+
+func TestLookupShareFactsIsAProReadTool(t *testing.T) {
+	f := newTerminalFake()
+	backendURL := f.server(t).URL
+	if terminalTools(t, connect(t, map[string]bool{"market:read": true}, backendURL, nil))["lookup_share_facts"] != nil {
+		t.Error("lookup_share_facts exposed without planning:read")
+	}
+	tool := terminalTools(t, connect(t, map[string]bool{"planning:read": true}, backendURL, nil))["lookup_share_facts"]
+	if tool == nil {
+		t.Fatal("lookup_share_facts not exposed with planning:read")
+	}
+	if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint || slices.Contains(tools.WriteToolNames(), "lookup_share_facts") {
+		t.Error("lookup_share_facts must be a ReadOnlyHint tool outside WriteToolNames()")
+	}
+	for _, want := range []string{"Norviq Pro", "saves nothing"} {
+		if !strings.Contains(tool.Description, want) {
+			t.Errorf("description is missing %q", want)
+		}
+	}
+	assertTerminalNotice(t, tool)
+}
+
+func TestLookupShareFactsReturnsASuggestionAndWritesNothing(t *testing.T) {
+	f := newTerminalFake()
+	cs := connect(t, map[string]bool{"planning:read": true}, f.server(t).URL, nil)
+
+	text, isErr := callPilotTool(t, cs, "lookup_share_facts", map[string]any{"ticker": " amzn"})
+	if isErr {
+		t.Fatalf("lookup_share_facts failed: %s", text)
+	}
+	if len(f.calls) != 1 || f.calls[0].Method+" "+f.calls[0].Path != shareFactsPath || f.calls[0].Body["ticker"] != "AMZN" {
+		t.Fatalf("calls = %+v, want one share-facts POST for AMZN", f.calls)
+	}
+	if f.writes() != 0 {
+		t.Error("lookup_share_facts wrote a terminal position")
+	}
+	for _, want := range []string{`"sharesOutstanding": 10600000000`, "https://ir.aboutamazon.com/quarterly-results", `"saved": false`} {
+		if !strings.Contains(text, want) {
+			t.Errorf("result is missing %s:\n%s", want, text)
+		}
+	}
+}
+
+func TestLookupShareFactsExplainsTheProUpgrade(t *testing.T) {
+	f := newTerminalFake()
+	f.fail[shareFactsPath] = terminalFailure{http.StatusForbidden, upgradeRequiredJSON}
+	cs := connect(t, map[string]bool{"planning:read": true}, f.server(t).URL, nil)
+
+	text, isErr := callPilotTool(t, cs, "lookup_share_facts", map[string]any{"ticker": "AMZN"})
+	if !isErr || !strings.Contains(text, "lookup_share_facts needs Norviq Pro") {
+		t.Errorf("got %q (error=%v), want the Pro upgrade message", text, isErr)
+	}
+}
+
+func TestLookupShareFactsDoesNotCallAMissingScopeAnUpgrade(t *testing.T) {
+	f := newTerminalFake()
+	f.fail[shareFactsPath] = terminalFailure{http.StatusForbidden, `{"error":true,"reason":"insufficient_scope: 'planning:read' required"}`}
+	cs := connect(t, map[string]bool{"planning:read": true}, f.server(t).URL, nil)
+
+	text, isErr := callPilotTool(t, cs, "lookup_share_facts", map[string]any{"ticker": "AMZN"})
+	if !isErr {
+		t.Fatal("a 403 must be an error")
+	}
+	if strings.Contains(text, "lookup_share_facts needs Norviq Pro") {
+		t.Errorf("a missing scope was reported as a Pro upgrade: %q", text)
+	}
+}
+
+func TestLookupShareFactsSaysWhenTheAILookupCannotAnswer(t *testing.T) {
+	cases := []struct {
+		status int
+		want   string
+	}{
+		{http.StatusServiceUnavailable, "unavailable right now"},
+		{http.StatusUnprocessableEntity, "could not find usable, sourced numbers"},
+	}
+	for _, tc := range cases {
+		f := newTerminalFake()
+		f.fail[shareFactsPath] = terminalFailure{tc.status, `{"error":true,"reason":"AI lookup unavailable"}`}
+		cs := connect(t, map[string]bool{"planning:read": true}, f.server(t).URL, nil)
+
+		text, isErr := callPilotTool(t, cs, "lookup_share_facts", map[string]any{"ticker": "AMZN"})
+		if !isErr || !strings.Contains(text, tc.want) || !strings.Contains(text, "Do not guess them") {
+			t.Errorf("status %d: got %q (error=%v), want %q and a do-not-guess instruction", tc.status, text, isErr, tc.want)
+		}
+	}
+}
+
+func TestLookupShareFactsRejectsANonTicker(t *testing.T) {
+	f := newTerminalFake()
+	cs := connect(t, map[string]bool{"planning:read": true}, f.server(t).URL, nil)
+	// "AMAZON" would be a syntactically valid ticker; a name with a space is not.
+	text, isErr := callPilotTool(t, cs, "lookup_share_facts", map[string]any{"ticker": "Amazon Inc"})
+	if !isErr || !strings.Contains(text, "not a valid ticker") {
+		t.Errorf("got %q (error=%v), want a not-a-valid-ticker error", text, isErr)
+	}
+	if len(f.calls) != 0 {
+		t.Errorf("an invalid ticker reached the backend: %+v", f.calls)
+	}
+}

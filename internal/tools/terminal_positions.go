@@ -86,6 +86,71 @@ func terminalFail(err error) *mcp.CallToolResult {
 	return fail(err)
 }
 
+// shareFactsUpgradeMessage answers the backend's Pro gate: a 403 whose body
+// code is "upgrade_required". The table itself is free, so the message says the
+// user can still type the numbers in.
+const shareFactsUpgradeMessage = "lookup_share_facts needs Norviq Pro: the AI share-facts lookup is a Pro feature. " +
+	"Terminal position sizing itself is free, so the user can still enter shares outstanding and today's price themselves. " +
+	"Upgrade at norviq.org."
+
+// shareFactsFail maps the AI lookup's documented failures. It is not errmap's
+// job: errmap says "Pro, or a missing permission" for every 403, and calls a
+// 503 a transient fault worth retrying.
+func shareFactsFail(err error, ticker string) *mcp.CallToolResult {
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) {
+		switch {
+		case apiErr.Status == http.StatusForbidden && apiErr.Code() == "upgrade_required":
+			return textResult(shareFactsUpgradeMessage, true)
+		case apiErr.Status == http.StatusServiceUnavailable:
+			return textResult("Norviq's AI lookup is unavailable right now, so there are no sourced numbers for "+ticker+
+				". Ask the user for shares outstanding and today's price, or cite a source they can check. Do not guess them.", true)
+		case apiErr.Status == http.StatusUnprocessableEntity:
+			return textResult("Norviq's AI lookup could not find usable, sourced numbers for "+ticker+
+				". Ask the user for shares outstanding and today's price, or cite a source they can check. Do not guess them.", true)
+		}
+	}
+	return terminalFail(err)
+}
+
+type shareFactsView struct {
+	Suggestion api.ShareFactsSuggestion `json:"suggestion"`
+	// Saved is always false: the lookup only suggests.
+	Saved bool   `json:"saved"`
+	Note  string `json:"note"`
+}
+
+func registerShareFacts(s *mcp.Server, client *api.Client) {
+	type tickerArgs struct {
+		Ticker string `json:"ticker" jsonschema:"stock ticker, e.g. AMZN or BRK.B"`
+	}
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "lookup_share_facts",
+		Description: "Norviq Pro. Ask Norviq's AI web lookup for a ticker's shares outstanding and share price today, with the sources " +
+			"it used and the as-of date. It returns a suggestion and saves nothing: show the user the numbers and the sources, " +
+			"and write them with set_terminal_scenario (sharesOutstanding, currentSharePrice) only if the user agrees. " +
+			"It never suggests a terminal market cap, terminal share count or value wanted; those stay the user's assumptions." +
+			terminalNotice,
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args tickerArgs) (*mcp.CallToolResult, any, error) {
+		ticker, err := normalizeTicker(args.Ticker)
+		if err != nil {
+			return textResult(err.Error(), true), nil, nil
+		}
+		facts, err := client.LookupShareFacts(ctx, ticker)
+		if err != nil {
+			return shareFactsFail(err, ticker), nil, nil
+		}
+		body, _ := json.MarshalIndent(shareFactsView{
+			Suggestion: *facts,
+			Saved:      false,
+			Note: "Suggestion only; nothing was saved. Show the user these numbers with their sources before writing anything. " +
+				terminalDisclaimer,
+		}, "", "  ")
+		return textResult(string(body), false), nil, nil
+	})
+}
+
 type terminalPositionsView struct {
 	Currency   string                 `json:"currency"`
 	Positions  []api.TerminalPosition `json:"positions"`
@@ -161,4 +226,6 @@ func registerTerminalPositions(s *mcp.Server, client *api.Client, p *auth.Princi
 		}, "", "  ")
 		return textResult(string(body), false), nil, nil
 	})
+
+	registerShareFacts(s, client)
 }
