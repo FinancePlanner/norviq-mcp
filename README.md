@@ -45,7 +45,7 @@ Tools are registered per session only when the token holds their scope.
 | `expenses:read` | `list_expenses`, `list_expense_categories`, `list_recurring_expenses`, `export_expenses_csv`, `get_dca_capacity` |
 | `expenses:write` | `add_expense`, `update_expense`, `delete_expense`, recurring add/update/delete, `import_expenses_csv` |
 | `reports:read` | `get_spending_report` |
-| `market:read` | `get_quote`, `search_symbols`, `get_news` |
+| `market:read` | `get_quote`, `search_symbols`, `get_news`, `get_market_brief` |
 | `portfolio:read` | `get_portfolio_summary` (also granted by legacy `market:read`); `list_pilots`, `get_pilot`, `list_pilot_follows`, `get_pilot_follow` (`portfolio:read` only) |
 | `insights:read` | `get_insights` |
 | `tax:read` | `get_tax_dashboard`, `get_tax_loss_carryforwards` |
@@ -73,6 +73,8 @@ set — writing a seven-symbol watchlist is one prompt, not seven.
 never places an order: Norviq's broker integration is read-only by construction.
 
 `get_news` is the one news tool: `source=tracked` (the user's own feed for held/watched symbols, the default with no query), `source=market` (per-symbol headlines from Norviq's archive; a `query` is resolved to up to three symbols via symbol search), or `source=general` (broad market headlines). Every item is `{kind, symbol, title, source, published_at, url, summary}`, newest first, capped by `max_results` (1–50, default 10) and `lookback_days` (default 7). The body is wrapped in `<untrusted_data>` because headlines are third-party text.
+
+`get_market_brief` reads Norviq's shared AI market brief: the morning pre-market brief (weekdays 08:15 Europe/Lisbon) or the evening market-close recap (weekdays 22:30 Lisbon), in `en` or `pt-PT` (`pt` accepted). It is the same brief for every user. With no `slot`/`date` it returns the latest; `slot` (`morning`/`evening`) and `date` (`yyyy-MM-dd`) go together and are checked before any backend call. The answer is a short text rendering (groups with signed changes, items with tickers and source host, a degraded note, and the `previous` brief to step back to) followed by the full payload. The brief's AI-written content and the payload sit inside `<untrusted_data>`. Feature off, nothing generated yet, and no brief for that slot and date are plain answers, not errors.
 
 The pilot tools are read-only views of pilot follows: a user follows a curated politician or 13F fund, and Norviq mirrors that pilot's disclosed trades as **simulated** trades into a hypothetical portfolio, or as a watchlist feed that marks sold symbols `exited`. Disclosures arrive with a lag (up to 45 days for congress, 135 for 13F), and no real money is invested. Follows are created, paused and stopped in the app, not over MCP. While the backend's `PILOTS_ENABLED` flag is off, each pilot tool answers "Pilot follows are not enabled…" instead of a not-found error.
 

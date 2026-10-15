@@ -43,6 +43,7 @@ func registerMarket(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			return textResult(prettyJSON(raw), false), nil, nil
 		})
 
+		registerMarketBrief(s, client)
 	}
 
 	// Holdings are not market data. Gated on portfolio:read, with market:read still
