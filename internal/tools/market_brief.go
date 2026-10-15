@@ -28,9 +28,9 @@ const marketBriefDescription = "Get Norviq's shared AI market brief. Two are wri
 	"pre-market brief (08:15 Europe/Lisbon) and the evening market-close recap (22:30 Europe/Lisbon), " +
 	"each in English (en) and European Portuguese (pt-PT). The brief is the same for every Norviq user: " +
 	"it is not personalised to the user's holdings and it is not financial advice. It has a greeting, " +
-	"market groups (for example indices, futures, rates, currencies, commodities) with each instrument's " +
-	"level and percentage change, and items (highlights, earnings and stories) with their tickers and a " +
-	"source link. With no slot and date it returns the latest brief; pass slot and date together for a " +
+	"index groups (European open and US futures in the morning, European and US close in the evening) " +
+	"with each index's level and percentage change, and items (highlights, earnings and stories) with " +
+	"their tickers and source. With no slot and date it returns the latest brief; pass slot and date together for a " +
 	"specific one. `previous` names the brief before this one (slot and tradingDate): pass those back as " +
 	"slot and date to step back. Use get_quote for live prices and get_news for headlines, not this."
 
