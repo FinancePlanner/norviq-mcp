@@ -64,7 +64,7 @@ func fakeBackend(t *testing.T) (*httptest.Server, *[]string) {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/portfolio/summary":
 			_, _ = w.Write([]byte(`{"totalMarketValue":10000}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/news/feed":
-			_, _ = w.Write([]byte(`[{"id":"n1","symbol":"AAPL","headline":"Apple launches thing","source":"Norviq","url":"https://example.com/aapl","summary":"A short summary","publishedAt":"2026-09-01T10:00:00Z","createdAt":"2026-09-01T10:00:00Z","updatedAt":"2026-09-01T10:00:00Z"}]`))
+			_, _ = w.Write([]byte(`[{"id":"n1","symbol":"AAPL","headline":"Apple launches thing","source":"Norviq","url":"https://example.com/aapl","summary":"A short summary","publishedAt":"` + today() + `T10:00:00Z","createdAt":"` + today() + `T10:00:00Z","updatedAt":"` + today() + `T10:00:00Z"}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/market/search":
 			_, _ = w.Write([]byte(`[{"symbol":"AAPL","name":"Apple Inc.","exchange":"NASDAQ","currency":"USD","conid":"123"},{"symbol":"AAPLX","name":"Apple Holdings","exchange":"NYSE","currency":"USD","conid":"456"}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/market/news":
@@ -943,5 +943,35 @@ func TestWatchlistSchemasListEveryStatus(t *testing.T) {
 	}
 	if checked != 2 {
 		t.Fatalf("expected to check both watchlist write tools, checked %d", checked)
+	}
+}
+
+// An oversized export is turned away with a pointer to the web export, which
+// must name the real site rather than a retired domain.
+func TestOversizedCSVExportPointsAtTheRealSite(t *testing.T) {
+	big := strings.Repeat("x", (1<<20)+1)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/expenses/export.csv" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/csv")
+		_, _ = w.Write([]byte(big))
+	}))
+	t.Cleanup(backend.Close)
+	cs := connect(t, map[string]bool{"expenses:read": true}, backend.URL, nil)
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "export_expenses_csv", Arguments: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, "https://www.norviq.org") {
+		t.Errorf("oversized export should point at https://www.norviq.org, got %q", text)
+	}
+	if strings.Contains(text, "norviqa") {
+		t.Errorf("oversized export still names a retired domain: %q", text)
 	}
 }

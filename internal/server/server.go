@@ -59,6 +59,15 @@ func metricsHandler(w http.ResponseWriter, _ *http.Request) {
 	_, _ = fmt.Fprintln(w, "norviq_mcp_ready 1")
 }
 
+// MetricsHandler serves Prometheus metrics. It is mounted on a separate,
+// cluster-only listener (METRICS_ADDR) so request and auth-failure counters
+// are never reachable through the public ingress.
+func MetricsHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/metrics", metricsHandler)
+	return mux
+}
+
 type Config struct {
 	BackendURL string // backend the service calls, may be cluster-internal, e.g. http://api:8080
 	// BackendPublicURL is the authorization server URL advertised to OAuth
@@ -88,7 +97,8 @@ func New(cfg Config) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready"))
 	})
-	mux.HandleFunc("/metrics", metricsHandler)
+	// /metrics is deliberately absent here: this mux is what the public
+	// ingress reaches. Metrics live on their own listener (MetricsHandler).
 
 	// RFC 9728 protected-resource metadata: points clients at the backend as the
 	// authorization server.

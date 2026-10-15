@@ -98,7 +98,8 @@ Full recipes (Claude app, ChatGPT, Cursor, Hermes, Inspector):
 |-----|---------|---------|
 | `BACKEND_BASE_URL` | `http://localhost:8080` | norviq-backend base URL |
 | `MCP_PUBLIC_URL` | `http://localhost:8087` | this service's public URL (for metadata) |
-| `LISTEN_ADDR` | `:8087` | listen address |
+| `LISTEN_ADDR` | `:8087` | listen address (public: MCP, health, OAuth metadata) |
+| `METRICS_ADDR` | `:9090` | Prometheus `/metrics` listener; cluster-only, never behind the ingress |
 | `MCP_INTROSPECTION_SECRET` | — (required) | shared secret for backend introspection |
 
 ## Local development

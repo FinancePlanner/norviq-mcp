@@ -16,7 +16,7 @@ func Friendly(err error) string {
 		case 401:
 			return "Your norviq connection needs to be re-authorized. Please reconnect the norviq connector."
 		case 403:
-			return "This action requires norviq Pro, or your token is missing the required permission. Upgrade at norviqa.io or reconnect with the needed scope."
+			return "This action requires norviq Pro, or your token is missing the required permission. Upgrade at https://www.norviq.org or reconnect with the needed scope."
 		case 404:
 			return "That item was not found in your norviq account."
 		case 429:

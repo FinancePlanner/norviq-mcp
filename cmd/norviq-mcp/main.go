@@ -28,6 +28,10 @@ func main() {
 	backendPublicURL := env("BACKEND_PUBLIC_URL", backendURL)
 	publicURL := env("MCP_PUBLIC_URL", "http://localhost:8087")
 	addr := env("LISTEN_ADDR", ":8087")
+	// Metrics get their own port so the public Service/ingress, which only
+	// targets LISTEN_ADDR, can never serve them. The scraper reaches this port
+	// on the pod IP directly.
+	metricsAddr := env("METRICS_ADDR", ":9090")
 	secret := os.Getenv("MCP_INTROSPECTION_SECRET")
 	if secret == "" {
 		log.Fatal("MCP_INTROSPECTION_SECRET is required")
@@ -41,6 +45,7 @@ func main() {
 	})
 
 	srv := &http.Server{Addr: addr, Handler: handler}
+	metricsSrv := &http.Server{Addr: metricsAddr, Handler: server.MetricsHandler()}
 
 	// Kubernetes sends SIGTERM and waits before SIGKILL. With no handler the Go
 	// runtime exits 143 immediately, which surfaces as an `Error` pod on every
@@ -50,10 +55,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	serveErr := make(chan error, 1)
+	serveErr := make(chan error, 2)
 	go func() {
 		log.Printf("norviq-mcp listening on %s (backend=%s)", addr, backendURL)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveErr <- err
+		}
+	}()
+	go func() {
+		log.Printf("norviq-mcp metrics listening on %s", metricsAddr)
+		if err := metricsSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serveErr <- err
 		}
 	}()
@@ -75,6 +86,9 @@ func main() {
 		// streaming when the signal arrives will hit the deadline. Worth a line
 		// in the log, but not worth a non-zero exit: the drain still ran.
 		log.Printf("norviq-mcp shutdown did not complete cleanly: %v", err)
+	}
+	if err := metricsSrv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("norviq-mcp metrics shutdown did not complete cleanly: %v", err)
 	}
 	log.Print("norviq-mcp stopped")
 }
