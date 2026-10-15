@@ -47,6 +47,7 @@ func Register(s *mcp.Server, client *api.Client, p *auth.Principal) {
 	registerTargets(s, client, p)
 	registerResearch(s, client, p)
 	registerPilots(s, client, p)
+	registerTerminalPositions(s, client, p)
 }
 
 func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {

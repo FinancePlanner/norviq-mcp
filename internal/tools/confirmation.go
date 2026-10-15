@@ -40,6 +40,7 @@ var writeToolNames = []string{
 	"delete_price_target",
 	"add_research_note",
 	"delete_research_note",
+	"set_terminal_scenario",
 }
 
 // WriteToolNames returns a defensive copy of tools that must never be exposed
