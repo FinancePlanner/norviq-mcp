@@ -19,3 +19,14 @@ func TestForbiddenPointsAtTheRealSite(t *testing.T) {
 		t.Errorf("403 message still names a retired domain: %q", msg)
 	}
 }
+
+// A consent refusal must not be mistaken for a missing Pro plan.
+func TestForbiddenConsentRequiredExplainsAIDataSharing(t *testing.T) {
+	msg := errmap.Friendly(&api.APIError{Status: 403, Body: `{"error":true,"code":"forbidden","reason":"AI_CONSENT_REQUIRED"}`})
+	if !strings.Contains(msg, "AI data sharing") {
+		t.Errorf("consent refusal should explain AI data sharing, got %q", msg)
+	}
+	if strings.Contains(msg, "Pro") {
+		t.Errorf("consent refusal should not mention Pro: %q", msg)
+	}
+}
