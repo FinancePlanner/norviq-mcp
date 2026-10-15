@@ -63,7 +63,7 @@ func registerCSV(s *mcp.Server, client *api.Client, p *auth.Principal) {
 			}
 			const cap = 1 << 20
 			if len(csv) > cap {
-				return textResult("The export is larger than 1 MB. Please narrow the date range or use the web export at norviqa.io.", false), nil, nil
+				return textResult("The export is larger than 1 MB. Please narrow the date range or use the web export at https://www.norviq.org.", false), nil, nil
 			}
 			return textResult(csv, false), nil, nil
 		})

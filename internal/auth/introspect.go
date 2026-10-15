@@ -5,6 +5,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -38,16 +39,34 @@ type cacheEntry struct {
 	cachedAt time.Time
 }
 
+// tokenKey is the cache key: a SHA-256 of the bearer, so a heap dump or a
+// debugger attached to the process never sees a usable token in the map.
+type tokenKey [sha256.Size]byte
+
+func keyFor(token string) tokenKey { return sha256.Sum256([]byte(token)) }
+
+// defaultMaxEntries bounds the cache. Each entry is a few hundred bytes, so
+// this caps it at a few MiB even if every request carries a fresh token.
+const defaultMaxEntries = 10_000
+
 // Introspector calls the backend introspection endpoint and caches results
 // briefly (bounding revocation lag to the TTL).
+//
+// Expired entries are swept at most once per TTL, and the map never grows
+// past maxEntries: without both, every distinct bearer ever presented —
+// including garbage from unauthenticated probes — stays in memory for the
+// life of the pod.
 type Introspector struct {
 	backendURL string
 	secret     string
 	http       *http.Client
 	ttl        time.Duration
+	maxEntries int
+	now        func() time.Time
 
-	mu    sync.Mutex
-	cache map[string]cacheEntry
+	mu        sync.Mutex
+	cache     map[tokenKey]cacheEntry
+	lastSweep time.Time
 }
 
 func NewIntrospector(backendURL, secret string) *Introspector {
@@ -56,15 +75,21 @@ func NewIntrospector(backendURL, secret string) *Introspector {
 		secret:     secret,
 		http:       &http.Client{Timeout: 10 * time.Second},
 		ttl:        60 * time.Second,
-		cache:      map[string]cacheEntry{},
+		maxEntries: defaultMaxEntries,
+		now:        time.Now,
+		cache:      map[tokenKey]cacheEntry{},
 	}
 }
 
 func (in *Introspector) Introspect(ctx context.Context, token string) (Introspection, error) {
+	key := keyFor(token)
 	in.mu.Lock()
-	if entry, ok := in.cache[token]; ok && time.Since(entry.cachedAt) < in.ttl {
-		in.mu.Unlock()
-		return entry.result, nil
+	if entry, ok := in.cache[key]; ok {
+		if in.now().Sub(entry.cachedAt) < in.ttl {
+			in.mu.Unlock()
+			return entry.result, nil
+		}
+		delete(in.cache, key)
 	}
 	in.mu.Unlock()
 
@@ -90,8 +115,31 @@ func (in *Introspector) Introspect(ctx context.Context, token string) (Introspec
 		return Introspection{}, fmt.Errorf("decode introspection: %w", err)
 	}
 
-	in.mu.Lock()
-	in.cache[token] = cacheEntry{result: result, cachedAt: time.Now()}
-	in.mu.Unlock()
+	in.store(key, result)
 	return result, nil
+}
+
+// store inserts a result, sweeping expired entries first when a sweep is due or
+// the cache is full. If it is still full after the sweep — a burst of distinct
+// live tokens inside one TTL — an arbitrary entry is dropped; the cost of that
+// is one extra introspection call, never a wrong answer.
+func (in *Introspector) store(key tokenKey, result Introspection) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	now := in.now()
+	if now.Sub(in.lastSweep) >= in.ttl || len(in.cache) >= in.maxEntries {
+		for k, e := range in.cache {
+			if now.Sub(e.cachedAt) >= in.ttl {
+				delete(in.cache, k)
+			}
+		}
+		in.lastSweep = now
+	}
+	if _, exists := in.cache[key]; !exists && len(in.cache) >= in.maxEntries {
+		for k := range in.cache {
+			delete(in.cache, k)
+			break
+		}
+	}
+	in.cache[key] = cacheEntry{result: result, cachedAt: now}
 }

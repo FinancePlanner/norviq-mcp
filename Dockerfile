@@ -9,6 +9,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/norviq-mcp ./cmd/norviq-mcp
 # Runtime
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/norviq-mcp /norviq-mcp
-EXPOSE 8087
+EXPOSE 8087 9090
 USER nonroot:nonroot
 ENTRYPOINT ["/norviq-mcp"]

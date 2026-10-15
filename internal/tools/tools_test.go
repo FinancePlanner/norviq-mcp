@@ -946,3 +946,33 @@ func TestWatchlistSchemasListEveryStatus(t *testing.T) {
 		t.Fatalf("expected to check both watchlist write tools, checked %d", checked)
 	}
 }
+
+// An oversized export is turned away with a pointer to the web export, which
+// must name the real site rather than a retired domain.
+func TestOversizedCSVExportPointsAtTheRealSite(t *testing.T) {
+	big := strings.Repeat("x", (1<<20)+1)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/expenses/export.csv" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/csv")
+		_, _ = w.Write([]byte(big))
+	}))
+	t.Cleanup(backend.Close)
+	cs := connect(t, map[string]bool{"expenses:read": true}, backend.URL, nil)
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "export_expenses_csv", Arguments: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, "https://www.norviq.org") {
+		t.Errorf("oversized export should point at https://www.norviq.org, got %q", text)
+	}
+	if strings.Contains(text, "norviqa") {
+		t.Errorf("oversized export still names a retired domain: %q", text)
+	}
+}
