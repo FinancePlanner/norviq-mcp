@@ -17,7 +17,7 @@ func registerCSV(s *mcp.Server, client *api.Client, p *auth.Principal) {
 		}
 		mcp.AddTool(s, &mcp.Tool{
 			Name:        "import_expenses_csv",
-			Description: "Import expenses from CSV. ALWAYS run once with dry_run=true first, show the user the per-row results, then re-call with dry_run=false only after they confirm.",
+			Description: "Import expenses from CSV. dry_run defaults to true and validates without writing: run it first and show the user the per-row results so bad rows get fixed before anything lands. dry_run=false writes the rows and requires MCP form confirmation.",
 		}, func(ctx context.Context, req *mcp.CallToolRequest, args importArgs) (*mcp.CallToolResult, any, error) {
 			dryRun := true
 			if args.DryRun != nil {
