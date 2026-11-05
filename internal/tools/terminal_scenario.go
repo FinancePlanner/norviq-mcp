@@ -240,11 +240,8 @@ func registerSetTerminalScenario(s *mcp.Server, client *api.Client, p *auth.Prin
 	})
 }
 
-// terminalCreateKey buckets the key by 5 minutes: the backend replays a cached
-// 2xx for 24h, so a deliberate re-create after a delete must not be replayed.
+// terminalCreateKey is bucketed so a deliberate re-create after a delete is not
+// replayed.
 func terminalCreateKey(userID string, args setTerminalScenarioArgs, now time.Time) string {
-	return idempotencyKey(userID, struct {
-		Args   setTerminalScenarioArgs
-		Bucket int64
-	}{args, now.Unix() / 300})
+	return idempotencyKeyAt(userID, args, now)
 }

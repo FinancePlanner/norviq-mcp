@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/FinancePlanner/norviq-mcp/internal/api"
 	"github.com/FinancePlanner/norviq-mcp/internal/auth"
@@ -194,10 +195,21 @@ func registerExpenses(s *mcp.Server, client *api.Client, p *auth.Principal) {
 	}
 }
 
-// idempotencyKey derives a stable key from the user and normalized args so a
-// retried add_expense does not double-write within the backend's dedup window.
+// idempotencyKey derives a key from the user and normalized args so a retried
+// write does not double-write.
 func idempotencyKey(userID string, args any) string {
-	encoded, _ := json.Marshal(args)
+	return idempotencyKeyAt(userID, args, time.Now())
+}
+
+// idempotencyKeyAt buckets the key by 5 minutes: the backend replays a cached
+// 2xx for 24h, so a deliberate identical write later must not be replayed. It
+// would report success and write nothing. A retry that crosses a bucket
+// boundary gets a new key and can write twice.
+func idempotencyKeyAt(userID string, args any, now time.Time) string {
+	encoded, _ := json.Marshal(struct {
+		Args   any
+		Bucket int64
+	}{args, now.Unix() / 300})
 	sum := sha256.Sum256([]byte(userID + ":" + string(encoded)))
 	return "mcp_" + hex.EncodeToString(sum[:16])
 }
